@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 补给运输计算器</title>
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 补给运输计算器</h1>
+        
+        <div class="card">
+            <h2>📋 项目说明</h2>
+            <div class="info-box">
+                <p>本工具用于优化船舱装载方案，在保证各物品库存消耗平衡的前提下，将船舱装载至最大容量。</p>
+                <p><strong>核心规则：</strong>补充后各物品的库存天数必须相同，按重量和体积中占用比例较高的计算填充率。</p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>⚙️ 船舱容量设置</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>🚀 船舱类型</label>
+                    <select id="shipType" onchange="updateShipCapacity()">
+                        <option value="">-- 选择船舱 --</option>
+                        <option value="TCB">TCB 微型货舱 (100t/100m³)</option>
+                        <option value="VSC">VSC 超小型货舱 (250t/250m³)</option>
+                        <option value="SCB">SCB 小型货舱 (500t/500m³)</option>
+                        <option value="MCB">MCB 中型货舱 (1000t/1000m³)</option>
+                        <option value="LCB">LCB 大型货舱 (2000t/2000m³)</option>
+                        <option value="HCB">HCB 巨型货舱 (5000t/5000m³)</option>
+                        <option value="VCB">VCB 高容积货舱 (1000t/3000m³)</option>
+                        <option value="WCB">WCB 高负荷货舱 (3000t/1000m³)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>⚖️ 重量容量 (吨)</label>
+                    <input type="number" id="capacityWeight" value="2000" min="1" step="100" onchange="validateCapacityInput('weight')">
+                </div>
+                <div class="form-group">
+                    <label>📦 体积容量 (m³)</label>
+                    <input type="number" id="capacityVolume" value="2000" min="1" step="100" onchange="validateCapacityInput('volume')">
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📦 物品信息 <span id="itemCount" class="highlight">0 种物品</span></h2>
+            <div class="item-row-header">
+                <label>物品代码</label>
+                <label>现有库存</label>
+                <label>每日消耗</label>
+                <label>单位重量(t)</label>
+                <label>单位体积(m³)</label>
+                <label>操作</label>
+            </div>
+            <div id="itemContainer"></div>
+            <div style="display: flex; align-items: center; gap: 15px; margin-top: 15px;">
+                <button class="btn btn-add" onclick="addItem()">➕ 添加物品</button>
+                <span id="matchHint" class="highlight"></span>
+            </div>
+        </div>
+        
+        <button class="btn btn-primary" onclick="optimize()">🧮 计算最优装载方案</button>
+        
+        <div class="card result-card" id="resultCard">
+            <h2>📊 优化结果</h2>
+            
+            <div class="stat-grid">
+                <div class="stat-box">
+                    <div class="value" id="optimalDays">0</div>
+                    <div class="label">最优平衡天数</div>
+                </div>
+                <div class="stat-box">
+                    <div class="value" id="fillRate">0%</div>
+                    <div class="label">填充率</div>
+                </div>
+                <div class="stat-box">
+                    <div class="value" id="totalWeight">0</div>
+                    <div class="label">总重量 (t)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="value" id="totalVolume">0</div>
+                    <div class="label">总体积 (m³)</div>
+                </div>
+            </div>
+            
+            <div class="progress-section">
+                <div class="progress-item">
+                    <div class="progress-header">
+                        <span>⚖️ 重量填充</span>
+                        <span id="weightText">0 / 0 t</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill weight" id="weightProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="progress-item">
+                    <div class="progress-header">
+                        <span>📦 体积填充</span>
+                        <span id="volumeText">0 / 0 m³</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill volume" id="volumeProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="progress-item">
+                    <div class="progress-header">
+                        <span>🔴 瓶颈资源</span>
+                        <span id="bottleneckText">-</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill bottleneck" id="bottleneckProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th>物品代码</th>
+                        <th>装载数量</th>
+                        <th>装载重量(t)</th>
+                        <th>装载体积(m³)</th>
+                        <th>目标库存</th>
+                        <th>库存天数</th>
+                    </tr>
+                </thead>
+                <tbody id="resultList"></tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
