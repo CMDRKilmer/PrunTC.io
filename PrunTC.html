@@ -14,7 +14,7 @@
     <title>🚀 补给运输计算器 - 船舱装载优化工具</title>
     <link rel="canonical" href="https://github.com/CMDRKilmer/prun.io">
     <script src="data.js"></script>
-    <script src="script.js"></script>
+    <script src="pruntc.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,6 +23,12 @@
         <header>
             <h1>🚀 补给运输计算器</h1>
         </header>
+        
+        <!-- 功能切换导航 -->
+        <nav class="nav-tabs" role="tablist" aria-label="功能切换" style="display: flex; gap: 10px; margin-bottom: 20px; padding: 10px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color);">
+            <a href="PrunTC.html" class="nav-tab active" role="tab" aria-selected="true" style="flex: 1; padding: 12px 20px; border: none; border-radius: 8px; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: #fff; font-weight: 600; font-size: 1em; cursor: pointer; transition: all 0.3s ease; text-decoration: none; text-align: center;">🚀 补给运输计算器</a>
+            <a href="MTC.html" class="nav-tab" role="tab" style="flex: 1; padding: 12px 20px; border: none; border-radius: 8px; background: transparent; color: var(--text-muted); font-size: 1em; cursor: pointer; transition: all 0.3s ease; text-decoration: none; text-align: center;">🚚 最少次数运输计算器</a>
+        </nav>
         
         <main>
             <section class="card" aria-labelledby="info-heading">
@@ -68,15 +74,20 @@
             
             <section class="card" aria-labelledby="items-heading">
                 <h2 id="items-heading">📦 物品信息 <span id="itemCount" class="highlight" aria-live="polite">0 种物品</span></h2>
-                <div class="item-row-header" role="row" aria-label="物品信息列标题">
-                    <label>物品代码</label>
-                    <label>现有库存</label>
-                    <label>每日消耗</label>
-                    <label>单位重量(t)</label>
-                    <label>单位体积(m³)</label>
-                    <label>操作</label>
+                
+                <!-- 快速示例 -->
+                <div class="quick-examples">
+                    <span style="color: var(--text-muted); margin-right: 10px;">快速示例：</span>
+                    <button class="btn-example" onclick="loadExampleData()">加载示例数据</button>
                 </div>
-                <div id="itemContainer" role="list" aria-label="物品列表"></div>
+                
+                <!-- 错误提示 -->
+                <div id="errorMessage" class="error-message" role="alert"></div>
+                
+                <!-- 物品列表 -->
+                <div id="itemContainer" class="items-input-section" role="list" aria-label="物品列表"></div>
+                
+                <!-- 操作按钮 -->
                 <div class="action-buttons">
                     <button class="btn btn-add" onclick="addItem()" aria-label="添加新物品">➕ 添加物品</button>
                     <button class="btn btn-secondary" onclick="loadExampleData()" aria-label="加载示例数据">📋 示例数据</button>

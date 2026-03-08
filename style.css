@@ -241,19 +241,77 @@ select option:checked {
     font-size: 1em;
 }
 
+/* 删除按钮样式（统一使用） */
+.btn-remove-item {
+    padding: 12px 18px;
+    background: rgba(255, 71, 87, 0.2);
+    border: 1px solid rgba(255, 71, 87, 0.4);
+    border-radius: 8px;
+    color: #ff4757;
+    cursor: pointer;
+    font-size: 1em;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-remove-item:hover {
+    background: rgba(255, 71, 87, 0.3);
+    transform: scale(1.05);
+}
+
 /* 物品输入行样式 */
 .item-input-row {
     display: grid;
-    grid-template-columns: 120px 120px 120px 120px 120px auto;
-    gap: 15px;
-    align-items: center;
-    margin-bottom: 15px;
-    padding: 15px;
-    background: var(--bg-input-readonly);
-    border-radius: 12px;
-    animation: slideIn 0.3s ease;
-    will-change: transform, opacity;
-    contain: layout style;
+    grid-template-columns: minmax(70px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(120px, 2fr) 50px;
+    gap: 8px;
+    align-items: end;
+    padding: 12px;
+    background: var(--bg-card-light);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border-color-lighter);
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.item-input-row:hover {
+    border-color: var(--border-color);
+    background: var(--bg-card);
+}
+
+.item-input-row .form-group {
+    margin: 0;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.item-input-row label {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    display: block;
+}
+
+.item-input-row input,
+.item-input-row select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-input);
+    color: var(--text-color);
+    font-size: 0.9em;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+
+.item-input-row input:focus,
+.item-input-row select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    background: var(--bg-input-focus);
 }
 
 @keyframes slideIn {
@@ -263,7 +321,7 @@ select option:checked {
 
 .item-row-header {
     display: grid;
-    grid-template-columns: 120px 120px 120px 120px 120px auto;
+    grid-template-columns: 70px 120px 120px 120px 120px auto;
     gap: 15px;
     padding: 0 15px 10px;
     font-size: 0.8em;
@@ -278,6 +336,8 @@ select option:checked {
 .code-input {
     text-transform: uppercase;
     font-weight: bold;
+    width: 80px;
+    max-width: 80px;
 }
 
 /* 结果卡片样式 */
@@ -403,11 +463,6 @@ select option:checked {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-    .item-input-row, .item-row-header {
-        grid-template-columns: 1fr;
-        gap: 10px;
-    }
-    
     .form-grid { grid-template-columns: 1fr; }
     
     h1 { font-size: 1.8em; }
@@ -420,6 +475,13 @@ select option:checked {
         width: 40px;
         height: 40px;
         font-size: 1.2em;
+    }
+}
+
+@media (max-width: 480px) {
+    .item-input-row, .item-row-header {
+        grid-template-columns: 1fr;
+        gap: 10px;
     }
 }
 
@@ -619,14 +681,15 @@ select option:checked {
     padding: 12px 24px;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
 @keyframes scaleIn {
     from { opacity: 0; transform: scale3d(0.9, 0.9, 1); }
     to { opacity: 1; transform: scale3d(1, 1, 1); }
+}
+
+/* 淡出动画 */
+@keyframes fadeOut {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-10px); }
 }
 
 /* 移除旧的动画 */
@@ -653,5 +716,246 @@ select option:checked {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+    }
+}
+
+/* ==================== MTC 页面专用样式 ==================== */
+
+/* 功能切换导航 */
+.nav-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: var(--bg-card);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.nav-tab {
+    flex: 1;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    text-align: center;
+}
+
+.nav-tab:hover {
+    background: var(--bg-card-light);
+    color: var(--text-color);
+}
+
+.nav-tab.active {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: #fff;
+    font-weight: 600;
+}
+
+/* 运输限制条件展示 */
+.constraints-box {
+    background: var(--info-bg);
+    border: 1px solid var(--info-border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.constraints-box h3 {
+    color: var(--secondary-color);
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.constraint-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color-light);
+}
+
+.constraint-item:last-child {
+    border-bottom: none;
+}
+
+.constraint-icon {
+    font-size: 1.2em;
+}
+
+/* 物品输入区域 */
+.items-input-section {
+    margin-bottom: 20px;
+}
+
+/* 运输方案结果 */
+.trip-plan {
+    background: var(--bg-card-light);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 15px;
+    border: 1px solid var(--border-color);
+}
+
+.trip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color-light);
+}
+
+.trip-number {
+    font-size: 1.2em;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.trip-utilization {
+    display: flex;
+    gap: 20px;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.trip-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.trip-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: var(--bg-card);
+    border-radius: 8px;
+    border-left: 3px solid var(--primary-color);
+}
+
+.trip-item-name {
+    font-weight: 500;
+}
+
+.trip-item-qty {
+    color: var(--secondary-color);
+    font-weight: 600;
+}
+
+/* 统计摘要 */
+.summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+    padding: 20px;
+    background: linear-gradient(135deg, var(--bg-card), var(--bg-card-light));
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.summary-stat {
+    text-align: center;
+    padding: 15px;
+}
+
+.summary-stat-value {
+    font-size: 2em;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 5px;
+}
+
+.summary-stat-label {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+/* 快速示例按钮 */
+.quick-examples {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+
+.btn-example {
+    padding: 8px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-example:hover {
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-color);
+}
+
+/* 加载动画 */
+.calculating {
+    display: none;
+    text-align: center;
+    padding: 40px;
+}
+
+.calculating.show {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+/* 通知样式 */
+.error-message {
+    display: none;
+    background: rgba(255, 71, 87, 0.1);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    border-radius: 8px;
+    padding: 12px 15px;
+    color: #ff4757;
+    margin-bottom: 15px;
+}
+
+.error-message.show {
+    display: block;
+    animation: shake 0.5s ease;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+/* MTC 响应式调整 */
+@media (max-width: 768px) {
+    .item-input-row {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .nav-tabs {
+        flex-direction: column;
     }
 }
