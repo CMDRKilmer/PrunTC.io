@@ -35,13 +35,19 @@
  * 负责管理物品、计算最优装载方案
  */
 class CargoOptimizer {
+    // 缓存 calculateLoadForDays 结果
+    #loadCache = new Map();
+    // 最大load缓存大小
+    #maxLoadCacheSize = 200;
+    
     constructor() {
         /** @type {Item[]} */
         this.items = [];
         this.nextId = 1;
         /** @type {Map<string, OptimizeResult>} */
         this.cache = new Map();
-        this.maxCacheSize = 10;
+        this.maxCacheSize = 50; // 增加缓存大小
+        this.cacheAccessOrder = []; // 用于 LRU 缓存
     }
 
     /**
@@ -133,15 +139,28 @@ class CargoOptimizer {
     }
 
     /**
+     * 简单哈希函数
+     * @param {string} str - 输入字符串
+     * @returns {number} 哈希值
+     */
+    simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // 转换为32位整数
+        }
+        return Math.abs(hash);
+    }
+
+    /**
      * 清空缓存
      */
     clearCache() {
         this.cache.clear();
+        this.cacheAccessOrder = [];
         this.#loadCache.clear();
     }
-
-    // 缓存 calculateLoadForDays 结果
-    #loadCache = new Map();
 
     /**
      * 计算指定天数下的装载方案
@@ -150,7 +169,13 @@ class CargoOptimizer {
      * @returns {LoadResult} 装载方案
      */
     calculateLoadForDays(validItems, days) {
-        const cacheKey = `load_${days.toFixed(6)}`;
+        // 生成更精确的缓存键，包含物品信息
+        const itemsKey = validItems
+            .sort((a, b) => a.code.localeCompare(b.code))
+            .map(i => `${i.code}:${i.inventory}:${i.dailyConsume}:${i.unitWeight}:${i.unitVolume}`)
+            .join('|');
+        const cacheKey = `load_${days.toFixed(6)}_${this.simpleHash(itemsKey)}`;
+        
         if (this.#loadCache.has(cacheKey)) {
             return this.#loadCache.get(cacheKey);
         }
@@ -203,6 +228,12 @@ class CargoOptimizer {
             totalVolume: round(totalVolume, 4),
             load
         };
+        
+        // 限制load缓存大小
+        if (this.#loadCache.size >= this.#maxLoadCacheSize) {
+            const firstKey = this.#loadCache.keys().next().value;
+            this.#loadCache.delete(firstKey);
+        }
         this.#loadCache.set(cacheKey, result);
         return result;
     }
@@ -331,62 +362,37 @@ class CargoOptimizer {
     }
 
     /**
-     * 设置缓存
+     * 设置缓存（LRU 策略）
      * @param {string} key - 缓存键
      * @param {OptimizeResult} value - 缓存值
      */
     setCache(key, value) {
-        if (this.cache.size >= this.maxCacheSize) {
-            const firstKey = this.cache.keys().next().value;
-            this.cache.delete(firstKey);
+        // 移除已存在的键（如果有）
+        if (this.cache.has(key)) {
+            const index = this.cacheAccessOrder.indexOf(key);
+            if (index > -1) {
+                this.cacheAccessOrder.splice(index, 1);
+            }
+        } else if (this.cache.size >= this.maxCacheSize) {
+            // 删除最久未使用的项
+            const lruKey = this.cacheAccessOrder.shift();
+            if (lruKey) {
+                this.cache.delete(lruKey);
+            }
         }
+        
+        // 添加到缓存和访问顺序
         this.cache.set(key, value);
+        this.cacheAccessOrder.push(key);
     }
 }
 
 const optimizer = new CargoOptimizer();
 
-/**
- * 高精度数值舍入
- * @param {number} num - 要舍入的数字
- * @param {number} decimals - 小数位数
- * @returns {number} 舍入后的数字
- */
-function round(num, decimals = 2) {
-    if (!isFinite(num)) return 0;
-    const factor = Math.pow(10, decimals);
-    return Math.round((num + Number.EPSILON) * factor) / factor;
-}
-
-/**
- * 转义HTML特殊字符，防止XSS攻击
- * @param {string} text - 要转义的文本
- * @returns {string} 转义后的文本
- */
-function escapeHtml(text) {
-    if (typeof text !== 'string') return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-/**
- * 防抖函数
- * @param {Function} func - 要防抖的函数
- * @param {number} wait - 等待时间（毫秒）
- * @returns {Function} 防抖后的函数
- */
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
+// 使用 Utils 模块（如果可用）
+const round = typeof Utils !== 'undefined' ? Utils.round : (n, d) => Number(n.toFixed(d || 2));
+const escapeHtml = typeof Utils !== 'undefined' ? Utils.escapeHtml : (t) => t;
+const debounce = typeof Utils !== 'undefined' ? Utils.debounce : (f, w) => f;
 
 /**
  * 更新船舱容量
@@ -397,6 +403,16 @@ function updateShipCapacity() {
         document.getElementById('capacityWeight').value = shipTypes[shipType].weight;
         document.getElementById('capacityVolume').value = shipTypes[shipType].volume;
     }
+    // 同步更新显示值
+    updateCapacityDisplay();
+}
+
+/**
+ * 更新容量显示值
+ */
+function updateCapacityDisplay() {
+    // 容量显示已移至输入框，此函数保留用于兼容性
+    // 实际值直接显示在输入框中
 }
 
 /**
@@ -405,15 +421,26 @@ function updateShipCapacity() {
  */
 function validateCapacityInput(type) {
     const shipType = document.getElementById('shipType').value;
+    const input = document.getElementById(type === 'weight' ? 'capacityWeight' : 'capacityVolume');
+    const value = parseFloat(input.value);
+    
+    // 基本验证：确保值是有效的正数
+    if (!isFinite(value) || value <= 0) {
+        // 如果有选择船舱类型，恢复为船舱默认值；否则设为0
+        if (shipType && shipTypes[shipType]) {
+            input.value = type === 'weight' ? shipTypes[shipType].weight : shipTypes[shipType].volume;
+        } else {
+            input.value = 0;
+        }
+        return;
+    }
+    
+    // 如果选择了船舱类型，限制不能超过船舱最大容量
     if (shipType && shipTypes[shipType]) {
-        const input = document.getElementById(type === 'weight' ? 'capacityWeight' : 'capacityVolume');
-        const value = parseFloat(input.value);
         const maxValue = type === 'weight' ? shipTypes[shipType].weight : shipTypes[shipType].volume;
-        
-        if (!isFinite(value) || value <= 0) {
+        if (value > maxValue) {
             input.value = maxValue;
-        } else if (value > maxValue) {
-            input.value = maxValue;
+            showNotification(`容量不能超过船舱最大限制：${maxValue}${type === 'weight' ? '吨' : 'm³'}`, 'warning');
         }
     }
 }
@@ -429,6 +456,7 @@ const autoMatchMaterial = debounce(function(id, code) {
     // 强制转换为大写
     const upperCode = code.toUpperCase();
     const dbItem = materialDB[upperCode];
+    // 检查matchHint元素是否存在
     const hint = document.getElementById('matchHint');
     const row = document.querySelector(`[data-id="${id}"]`);
     const codeInput = row ? row.querySelector('[data-field="code"]') : null;
@@ -452,7 +480,7 @@ const autoMatchMaterial = debounce(function(id, code) {
             codeInput.style.borderColor = 'var(--primary-color)';
         }
 
-        // 提示文字
+        // 提示文字（仅当hint元素存在时）
         if (hint) {
             hint.textContent = '✓ 已自动匹配';
             setTimeout(() => { hint.textContent = ''; }, 2000);
@@ -470,6 +498,7 @@ const autoMatchMaterial = debounce(function(id, code) {
             codeInput.style.borderColor = '';
         }
 
+        // 提示文字（仅当hint元素存在且code不为空时）
         if (hint && upperCode) {
             hint.textContent = '⚠️ 未找到匹配物品';
             setTimeout(() => { hint.textContent = ''; }, 2000);
@@ -541,9 +570,9 @@ function addItemToDOM(item) {
     const container = document.getElementById('itemContainer');
     
     const div = document.createElement('div');
-    div.className = 'item-input-row';
+    div.className = 'item-input-row item-row-pruntc';
     div.setAttribute('data-id', item.id);
-    div.style.animation = 'fadeIn 0.3s ease'; // 添加淡入动画
+    div.style.animation = 'itemSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
     div.innerHTML = `
         <div class="form-group">
             <label>物品代码</label>
@@ -765,7 +794,9 @@ function optimize() {
         console.error('优化计算错误:', error);
         showNotification('计算过程中发生错误: ' + error.message, 'error');
     } finally {
-        btn.classList.remove('loading');
+        if (btn) {
+            btn.classList.remove('loading');
+        }
     }
 }
 
@@ -833,88 +864,6 @@ function initTheme() {
 }
 
 /**
- * 显示通知提示（替代 alert）
- * @param {string} message - 提示信息
- * @param {string} type - 提示类型: 'error' | 'warning' | 'success' | 'info'
- */
-function showNotification(message, type = 'error') {
-    // 移除已有的提示
-    const existing = document.querySelector('.notification');
-    if (existing) existing.remove();
-
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-
-    // 图标映射
-    const icons = {
-        error: '❌',
-        warning: '⚠️',
-        success: '✅',
-        info: 'ℹ️'
-    };
-
-    notification.innerHTML = `
-        <span class="notification-icon">${icons[type] || 'ℹ️'}</span>
-        <span class="notification-message">${escapeHtml(message)}</span>
-        <button class="notification-close" onclick="this.parentElement.remove()">✕</button>
-    `;
-
-    document.body.appendChild(notification);
-
-    // 自动移除
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.classList.add('notification-hiding');
-            setTimeout(() => notification.remove(), 300);
-        }
-    }, 5000);
-}
-
-/**
- * 显示确认对话框（替代 confirm）
- * @param {string} message - 确认消息
- * @param {Function} onConfirm - 确认回调
- * @param {Function} onCancel - 取消回调（可选）
- */
-function showConfirm(message, onConfirm, onCancel) {
-    // 移除已有的对话框
-    const existing = document.querySelector('.confirm-dialog');
-    if (existing) existing.remove();
-
-    const dialog = document.createElement('div');
-    dialog.className = 'confirm-dialog';
-    dialog.innerHTML = `
-        <div class="confirm-overlay"></div>
-        <div class="confirm-content">
-            <div class="confirm-icon">❓</div>
-            <div class="confirm-message">${escapeHtml(message)}</div>
-            <div class="confirm-buttons">
-                <button class="btn btn-secondary confirm-cancel">取消</button>
-                <button class="btn btn-danger confirm-ok">确定</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(dialog);
-
-    // 绑定事件
-    dialog.querySelector('.confirm-ok').addEventListener('click', () => {
-        dialog.remove();
-        if (onConfirm) onConfirm();
-    });
-
-    dialog.querySelector('.confirm-cancel').addEventListener('click', () => {
-        dialog.remove();
-        if (onCancel) onCancel();
-    });
-
-    dialog.querySelector('.confirm-overlay').addEventListener('click', () => {
-        dialog.remove();
-        if (onCancel) onCancel();
-    });
-}
-
-/**
  * 全局错误处理
  */
 window.addEventListener('error', function(e) {
@@ -932,4 +881,7 @@ window.onload = function() {
     document.getElementById('shipType').value = 'SCB';
     updateShipCapacity();
     initEventDelegation();
+    // 添加两个默认物品行
+    addItem();
+    addItem();
 };

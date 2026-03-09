@@ -10,6 +10,11 @@ const shipTypes = {
     "WCB": { name: "WCB 高负荷货舱", weight: 3000, volume: 1000 }
 };
 
+// 船舱类型名称映射（统一入口）
+const shipTypeNames = Object.fromEntries(
+    Object.entries(shipTypes).map(([key, val]) => [key, val.name])
+);
+
 // 材料数据库
 const materialDB = {
     "ALG": { weight: 0.7, volume: 1 },

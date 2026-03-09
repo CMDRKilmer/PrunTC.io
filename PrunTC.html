@@ -14,6 +14,7 @@
     <title>🚀 补给运输计算器 - 船舱装载优化工具</title>
     <link rel="canonical" href="https://github.com/CMDRKilmer/prun.io">
     <script src="data.js"></script>
+    <script src="utils.js"></script>
     <script src="pruntc.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -39,47 +40,53 @@
                 </div>
             </section>
             
-            <section class="card" aria-labelledby="capacity-heading">
-                <h2 id="capacity-heading">⚙️ 船舱容量设置</h2>
-                <div class="form-grid" role="group" aria-label="船舱容量配置">
-                    <div class="form-group">
-                        <label for="shipType">🚀 船舱类型</label>
-                        <select id="shipType" onchange="updateShipCapacity()" aria-describedby="shipType-desc">
-                            <option value="">-- 选择船舱 --</option>
-                            <option value="TCB">TCB 微型货舱 (100t/100m³)</option>
-                            <option value="VSC">VSC 超小型货舱 (250t/250m³)</option>
-                            <option value="SCB">SCB 小型货舱 (500t/500m³)</option>
-                            <option value="MCB">MCB 中型货舱 (1000t/1000m³)</option>
-                            <option value="LCB">LCB 大型货舱 (2000t/2000m³)</option>
-                            <option value="HCB">HCB 巨型货舱 (5000t/5000m³)</option>
-                            <option value="VCB">VCB 高容积货舱 (1000t/3000m³)</option>
-                            <option value="WCB">WCB 高负荷货舱 (3000t/1000m³)</option>
-                        </select>
-                        <span id="shipType-desc" class="sr-only">选择预设的船舱类型以自动填充容量</span>
+            <!-- 运输限制条件 -->
+            <section class="card" aria-labelledby="constraints-heading">
+                <h2 id="constraints-heading">📋 运输限制条件</h2>
+                <div class="constraints-wrapper">
+                    <div class="constraints-box">
+                        <h3>⚙️ 当前运输配置</h3>
+                        <div class="constraint-item">
+                            <span class="constraint-icon">🔄</span>
+                            <span>物品组合规则：每次运输可同时装载多种物品，但总重量和总体积不能超过上限</span>
+                        </div>
+                        <div class="constraint-item">
+                            <span class="constraint-icon">🎯</span>
+                            <span>优化目标：在保证各物品库存消耗平衡的前提下，最大化船舱利用率</span>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="capacityWeight">⚖️ 重量容量 (吨)</label>
-                        <input type="number" id="capacityWeight" value="2000" min="1" step="100" 
-                            onchange="validateCapacityInput('weight')" aria-describedby="weight-desc">
-                        <span id="weight-desc" class="sr-only">船舱可承载的最大重量</span>
-                    </div>
-                    <div class="form-group">
-                        <label for="capacityVolume">📦 体积容量 (m³)</label>
-                        <input type="number" id="capacityVolume" value="2000" min="1" step="100" 
-                            onchange="validateCapacityInput('volume')" aria-describedby="volume-desc">
-                        <span id="volume-desc" class="sr-only">船舱可容纳的最大体积</span>
+                    <div class="ship-info-box">
+                        <h3>🚀 飞船信息</h3>
+                        <div class="ship-info-item">
+                            <span class="ship-info-label">船舱类型：</span>
+                            <select id="shipType" onchange="updateShipCapacity()">
+                                <option value="">-- 选择船舱 --</option>
+                                <option value="TCB">TCB 微型货舱</option>
+                                <option value="VSC">VSC 超小型货舱</option>
+                                <option value="SCB">SCB 小型货舱</option>
+                                <option value="MCB">MCB 中型货舱</option>
+                                <option value="LCB">LCB 大型货舱</option>
+                                <option value="HCB">HCB 巨型货舱</option>
+                                <option value="VCB">VCB 高容积货舱</option>
+                                <option value="WCB">WCB 高负荷货舱</option>
+                            </select>
+                        </div>
+                        <div class="ship-info-item">
+                            <span class="ship-info-label">重量容量（吨）：</span>
+                            <input type="number" id="capacityWeight" value="2000" min="1" step="100" 
+                                onchange="validateCapacityInput('weight')">
+                        </div>
+                        <div class="ship-info-item">
+                            <span class="ship-info-label">体积容量（m³）：</span>
+                            <input type="number" id="capacityVolume" value="2000" min="1" step="100" 
+                                onchange="validateCapacityInput('volume')">
+                        </div>
                     </div>
                 </div>
             </section>
             
             <section class="card" aria-labelledby="items-heading">
                 <h2 id="items-heading">📦 物品信息 <span id="itemCount" class="highlight" aria-live="polite">0 种物品</span></h2>
-                
-                <!-- 快速示例 -->
-                <div class="quick-examples">
-                    <span style="color: var(--text-muted); margin-right: 10px;">快速示例：</span>
-                    <button class="btn-example" onclick="loadExampleData()">加载示例数据</button>
-                </div>
                 
                 <!-- 错误提示 -->
                 <div id="errorMessage" class="error-message" role="alert"></div>
@@ -91,8 +98,7 @@
                 <div class="action-buttons">
                     <button class="btn btn-add" onclick="addItem()" aria-label="添加新物品">➕ 添加物品</button>
                     <button class="btn btn-secondary" onclick="loadExampleData()" aria-label="加载示例数据">📋 示例数据</button>
-                    <button class="btn btn-danger" onclick="clearAllItems()" aria-label="清空所有物品">🗑️ 清空</button>
-                    <span id="matchHint" class="highlight" aria-live="polite" aria-atomic="true"></span>
+                    <button class="btn btn-danger" onclick="clearAllItems()" aria-label="重置所有物品">🔄 重置</button>
                 </div>
             </section>
             

@@ -8,17 +8,10 @@
 let mtcItems = [];
 let mtcItemIdCounter = 0;
 
-// 船舱类型名称映射
-const shipTypeNames = {
-    'TCB': 'TCB 微型货舱',
-    'VSC': 'VSC 超小型货舱',
-    'SCB': 'SCB 小型货舱',
-    'MCB': 'MCB 中型货舱',
-    'LCB': 'LCB 大型货舱',
-    'HCB': 'HCB 巨型货舱',
-    'VCB': 'VCB 高容积货舱',
-    'WCB': 'WCB 高负荷货舱'
-};
+// 使用 Utils 模块（如果可用）
+const round = typeof Utils !== 'undefined' ? Utils.round : (n, d) => Number(n.toFixed(d || 2));
+const escapeHtml = typeof Utils !== 'undefined' ? Utils.escapeHtml : (t) => t;
+const debounce = typeof Utils !== 'undefined' ? Utils.debounce : (f, w) => f;
 
 /**
  * MTC 统一的自动匹配函数（防抖200ms）
@@ -55,8 +48,39 @@ function mtcUpdateShipCapacity() {
  * MTC 更新限制条件显示
  */
 function mtcUpdateConstraintDisplay() {
-    const weight = parseFloat(document.getElementById('maxWeightInput').value) || 500;
-    const volume = parseFloat(document.getElementById('maxVolumeInput').value) || 500;
+    const shipType = document.getElementById('shipType').value;
+    const weightInput = document.getElementById('maxWeightInput');
+    const volumeInput = document.getElementById('maxVolumeInput');
+    let weight = parseFloat(weightInput.value) || 500;
+    let volume = parseFloat(volumeInput.value) || 500;
+    
+    // 如果选择了船舱类型，验证并限制容量不超过最大值
+    if (shipType && shipTypes[shipType]) {
+        const maxWeight = shipTypes[shipType].weight;
+        const maxVolume = shipTypes[shipType].volume;
+        
+        if (weight > maxWeight) {
+            weight = maxWeight;
+            weightInput.value = maxWeight;
+            showNotification(`重量容量不能超过船舱最大限制：${maxWeight}吨`, 'warning');
+        }
+        if (volume > maxVolume) {
+            volume = maxVolume;
+            volumeInput.value = maxVolume;
+            showNotification(`体积容量不能超过船舱最大限制：${maxVolume}m³`, 'warning');
+        }
+    }
+    
+    // 确保值为正数
+    if (weight <= 0) {
+        weight = shipType && shipTypes[shipType] ? shipTypes[shipType].weight : 500;
+        weightInput.value = weight;
+    }
+    if (volume <= 0) {
+        volume = shipType && shipTypes[shipType] ? shipTypes[shipType].volume : 500;
+        volumeInput.value = volume;
+    }
+    
     document.getElementById('maxWeight').textContent = weight;
     document.getElementById('maxVolume').textContent = volume;
 }
@@ -66,79 +90,18 @@ function mtcUpdateConstraintDisplay() {
  */
 function mtcAddItem() {
     const container = document.getElementById('itemsContainer');
+    if (!container) {
+        console.error('Items container not found');
+        return;
+    }
     const itemId = mtcItemIdCounter++;
     
-    const row = document.createElement('div');
-    row.className = 'item-input-row';
-    row.dataset.itemId = itemId;
-    row.style.animation = 'fadeIn 0.3s ease';
-    
-    row.innerHTML = `
-        <div class="form-group">
-            <label>物品代码</label>
-            <input type="text" id="itemCode-${itemId}" placeholder="如: MCG"
-                oninput="mtcOnItemCodeInput(${itemId})" onchange="mtcOnItemCodeChange(${itemId})">
-        </div>
-        <div class="form-group">
-            <label>数量</label>
-            <input type="number" id="itemQty-${itemId}" min="1" step="1" placeholder="输入数量"
-                onchange="mtcValidateQty(${itemId})" oninput="mtcValidateQty(${itemId})">
-        </div>
-        <div class="form-group">
-            <label>单位重量/体积</label>
-            <input type="text" id="itemInfo-${itemId}" readonly placeholder="自动填充"
-                style="background: var(--bg-input-readonly); cursor: not-allowed;">
-        </div>
-        <button class="btn-remove-item" onclick="mtcRemoveItem(${itemId})" title="删除此物品">🗑️</button>
-    `;
-    
-    container.appendChild(row);
-    mtcUpdateItemCount();
-}
-
-/**
- * MTC 物品代码输入时自动匹配（使用防抖）
- */
-function mtcOnItemCodeInput(itemId) {
-    const input = document.getElementById(`itemCode-${itemId}`);
-    const infoInput = document.getElementById(`itemInfo-${itemId}`);
-    mtcAutoMatchCode(input, infoInput);
-}
-
-/**
- * MTC 物品代码改变时自动填充信息（立即执行）
- */
-function mtcOnItemCodeChange(itemId) {
-    const input = document.getElementById(`itemCode-${itemId}`);
-    const infoInput = document.getElementById(`itemInfo-${itemId}`);
-    
-    // 强制转换为大写
-    input.value = input.value.toUpperCase();
-    const code = input.value;
-    
-    if (code && typeof materialDB !== 'undefined' && materialDB[code]) {
-        const data = materialDB[code];
-        infoInput.value = `${data.weight}t / ${data.volume}m³`;
-        input.style.borderColor = 'var(--primary-color)';
+    const row = createItemRow('', 1, itemId);
+    if (row) {
+        container.appendChild(row);
+        mtcUpdateItemCount();
     } else {
-        infoInput.value = '';
-        input.style.borderColor = '';
-    }
-}
-
-/**
- * MTC 验证数量输入
- */
-function mtcValidateQty(itemId) {
-    const input = document.getElementById(`itemQty-${itemId}`);
-    const value = parseInt(input.value);
-    
-    if (isNaN(value) || value < 1) {
-        input.style.borderColor = '#ff4757';
-        return false;
-    } else {
-        input.style.borderColor = '';
-        return true;
+        console.error('Failed to create item row');
     }
 }
 
@@ -146,14 +109,16 @@ function mtcValidateQty(itemId) {
  * MTC 删除物品行（带淡出动画）
  */
 function mtcRemoveItem(itemId) {
-    const row = document.querySelector(`[data-item-id="${itemId}"]`);
-    if (row) {
-        row.style.animation = 'fadeOut 0.3s ease forwards';
-        setTimeout(() => {
-            row.remove();
-            mtcUpdateItemCount();
-        }, 300);
-    }
+    showConfirm('确定要删除这个物品吗？', () => {
+        const row = document.querySelector(`[data-item-id="${itemId}"]`);
+        if (row) {
+            row.style.animation = 'fadeOut 0.3s ease forwards';
+            setTimeout(() => {
+                row.remove();
+                mtcUpdateItemCount();
+            }, 300);
+        }
+    });
 }
 
 /**
@@ -167,43 +132,147 @@ function mtcUpdateItemCount() {
 /**
  * MTC 加载示例数据
  */
-function mtcLoadExample(type) {
+function mtcLoadExample() {
     const container = document.getElementById('itemsContainer');
     container.innerHTML = '';
     mtcItemIdCounter = 0;
     
-    if (type === 'INS-MCG') {
-        // 复杂组合示例：多种物品混合
-        // BBH: 10个 (0.5t / 0.8m³) = 5t / 8m³
-        // BDE: 10个 (0.1t / 1.5m³) = 1t / 15m³
-        // BSE: 6个 (0.3t / 0.5m³) = 1.8t / 3m³
-        // BTA: 4个 (0.3t / 0.4m³) = 1.2t / 1.6m³
-        // INS: 4940个 (0.06t / 0.1m³) = 296.4t / 494m³
-        // LBH: 56个 (0.2t / 0.6m³) = 11.2t / 33.6m³
-        // LDE: 80个 (0.1t / 1.2m³) = 8t / 96m³
-        // LSE: 100个 (0.3t / 1.2m³) = 30t / 120m³
-        // LTA: 42个 (0.3t / 0.5m³) = 12.6t / 21m³
-        // MCG: 1976个 (0.24t / 0.1m³) = 474.24t / 197.6m³
-        // PSL: 12个 (需要查询数据)
-        // RSE: 2个 (1.9t / 0.7m³) = 3.8t / 1.4m³
-        // RTA: 4个 (1.5t / 0.5m³) = 6t / 2m³
-        // TRU: 80个 (0.1t / 1.5m³) = 8t / 120m³
-        mtcAddItemWithData('BBH', 10);
-        mtcAddItemWithData('BDE', 10);
-        mtcAddItemWithData('BSE', 6);
-        mtcAddItemWithData('BTA', 4);
-        mtcAddItemWithData('INS', 4940);
-        mtcAddItemWithData('LBH', 56);
-        mtcAddItemWithData('LDE', 80);
-        mtcAddItemWithData('LSE', 100);
-        mtcAddItemWithData('LTA', 42);
-        mtcAddItemWithData('MCG', 1976);
-        mtcAddItemWithData('RSE', 2);
-        mtcAddItemWithData('RTA', 4);
-        mtcAddItemWithData('TRU', 80);
-    }
+    // 复杂组合示例：多种物品混合
+    const examples = [
+        ['BBH', 10],
+        ['BDE', 10],
+        ['BSE', 6],
+        ['BTA', 4],
+        ['INS', 4940],
+        ['LBH', 56],
+        ['LDE', 80],
+        ['LSE', 100],
+        ['LTA', 42],
+        ['MCG', 1976],
+        ['RSE', 2],
+        ['RTA', 4],
+        ['TRU', 80]
+    ];
+    
+    // 使用 DocumentFragment 批量处理
+    const fragment = document.createDocumentFragment();
+    
+    examples.forEach(([code, qty]) => {
+        const row = createItemRow(code, qty, mtcItemIdCounter++);
+        if (row) {
+            fragment.appendChild(row);
+        }
+    });
+    
+    // 一次性添加到容器
+    container.appendChild(fragment);
     
     mtcUpdateItemCount();
+}
+
+/**
+ * 创建物品行元素（用于批量处理）
+ * @param {string} code - 物品代码
+ * @param {number} qty - 数量
+ * @param {number} itemId - 物品ID
+ * @returns {HTMLElement} 物品行元素
+ */
+function createItemRow(code = '', qty = 1, itemId) {
+    try {
+        const row = document.createElement('div');
+        row.className = 'item-input-row';
+        row.dataset.itemId = itemId;
+        row.style.animation = 'itemSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+        row.style.display = 'grid';
+        row.style.gridTemplateColumns = '100px 120px 200px 50px';
+        row.style.gap = '12px';
+        row.style.alignItems = 'end';
+        row.style.padding = '15px';
+        row.style.background = 'var(--bg-card-light)';
+        row.style.borderRadius = '10px';
+        row.style.marginBottom = '10px';
+        row.style.border = '1px solid var(--border-color-lighter)';
+        
+        let infoValue = '';
+        if (code && typeof materialDB !== 'undefined' && materialDB[code]) {
+            const data = materialDB[code];
+            infoValue = `${data.weight}t / ${data.volume}m³`;
+        }
+        
+        row.innerHTML = `
+            <div class="form-group">
+                <label>物品代码</label>
+                <input type="text" data-field="code" value="${code}" ${!code ? 'placeholder="如: MCG"' : ''}>
+            </div>
+            <div class="form-group">
+                <label>数量</label>
+                <input type="number" data-field="qty" min="1" step="1" value="${qty}" ${!qty ? 'placeholder="输入数量"' : ''}>
+            </div>
+            <div class="form-group">
+                <label>单位重量/体积</label>
+                <input type="text" data-field="info" readonly value="${infoValue}" ${!infoValue ? 'placeholder="自动填充"' : ''}>
+            </div>
+            <button class="btn-remove-item" title="删除此物品">🗑️</button>
+        `;
+        
+        // 缓存 DOM 元素
+        const codeInput = row.querySelector('[data-field="code"]');
+        const qtyInput = row.querySelector('[data-field="qty"]');
+        const infoInput = row.querySelector('[data-field="info"]');
+        const removeBtn = row.querySelector('.btn-remove-item');
+        
+        // 绑定事件监听器
+        codeInput.addEventListener('input', () => {
+            mtcAutoMatchCode(codeInput, infoInput);
+        });
+        
+        codeInput.addEventListener('change', () => {
+            // 强制转换为大写
+            codeInput.value = codeInput.value.toUpperCase();
+            const code = codeInput.value;
+            
+            if (code && typeof materialDB !== 'undefined' && materialDB[code]) {
+                const data = materialDB[code];
+                infoInput.value = `${data.weight}t / ${data.volume}m³`;
+                codeInput.style.borderColor = 'var(--primary-color)';
+            } else {
+                infoInput.value = '';
+                codeInput.style.borderColor = '';
+            }
+        });
+        
+        qtyInput.addEventListener('input', () => {
+            const value = parseInt(qtyInput.value);
+            if (isNaN(value) || value < 1) {
+                qtyInput.style.borderColor = '#ff4757';
+            } else {
+                qtyInput.style.borderColor = '';
+            }
+        });
+        
+        qtyInput.addEventListener('change', () => {
+            const value = parseInt(qtyInput.value);
+            if (isNaN(value) || value < 1) {
+                qtyInput.style.borderColor = '#ff4757';
+            } else {
+                qtyInput.style.borderColor = '';
+            }
+        });
+        
+        removeBtn.addEventListener('click', () => {
+            mtcRemoveItem(itemId);
+        });
+        
+        // 触发代码匹配
+        if (code) {
+            codeInput.dispatchEvent(new Event('change'));
+        }
+        
+        return row;
+    } catch (error) {
+        console.error('Error creating item row:', error);
+        return null;
+    }
 }
 
 /**
@@ -213,47 +282,18 @@ function mtcAddItemWithData(code, qty) {
     const container = document.getElementById('itemsContainer');
     const itemId = mtcItemIdCounter++;
     
-    const row = document.createElement('div');
-    row.className = 'item-input-row';
-    row.dataset.itemId = itemId;
-    row.style.animation = 'fadeIn 0.3s ease';
-    
-    let infoValue = '';
-    if (typeof materialDB !== 'undefined' && materialDB[code]) {
-        const data = materialDB[code];
-        infoValue = `${data.weight}t / ${data.volume}m³`;
+    const row = createItemRow(code, qty, itemId);
+    if (row) {
+        container.appendChild(row);
+        mtcUpdateItemCount();
     }
-    
-    row.innerHTML = `
-        <div class="form-group">
-            <label>物品代码</label>
-            <input type="text" id="itemCode-${itemId}" value="${code}"
-                oninput="mtcOnItemCodeInput(${itemId})" onchange="mtcOnItemCodeChange(${itemId})">
-        </div>
-        <div class="form-group">
-            <label>数量</label>
-            <input type="number" id="itemQty-${itemId}" min="1" step="1" value="${qty}"
-                onchange="mtcValidateQty(${itemId})" oninput="mtcValidateQty(${itemId})">
-        </div>
-        <div class="form-group">
-            <label>单位重量/体积</label>
-            <input type="text" id="itemInfo-${itemId}" readonly value="${infoValue}"
-                style="background: var(--bg-input-readonly); cursor: not-allowed;">
-        </div>
-        <button class="btn-remove-item" onclick="mtcRemoveItem(${itemId})" title="删除此物品">🗑️</button>
-    `;
-    
-    container.appendChild(row);
-    
-    // 触发代码匹配
-    mtcOnItemCodeChange(itemId);
 }
 
 /**
  * MTC 重置所有
  */
 function mtcResetAll() {
-    if (confirm('确定要清空所有物品吗？')) {
+    showConfirm('确定要清空所有物品吗？', () => {
         document.getElementById('itemsContainer').innerHTML = '';
         mtcItemIdCounter = 0;
         mtcAddItem();
@@ -261,24 +301,21 @@ function mtcResetAll() {
         mtcUpdateItemCount();
         mtcHideResult();
         mtcHideError();
-    }
+    });
 }
 
 /**
- * MTC 显示错误信息
+ * MTC 显示错误信息（使用通知样式）
  */
 function mtcShowError(message) {
-    const errorDiv = document.getElementById('errorMessage');
-    errorDiv.textContent = message;
-    errorDiv.classList.add('show');
-    setTimeout(() => errorDiv.classList.remove('show'), 5000);
+    showNotification(message, 'error');
 }
 
 /**
- * MTC 隐藏错误信息
+ * MTC 隐藏错误信息（兼容性函数）
  */
 function mtcHideError() {
-    document.getElementById('errorMessage').classList.remove('show');
+    // 使用通知系统，无需手动隐藏
 }
 
 /**
@@ -289,22 +326,26 @@ function mtcCollectItems() {
     const items = [];
     
     rows.forEach(row => {
-        const itemId = row.dataset.itemId;
-        const code = document.getElementById(`itemCode-${itemId}`).value;
-        const qty = parseInt(document.getElementById(`itemQty-${itemId}`).value);
+        const codeInput = row.querySelector('[data-field="code"]');
+        const qtyInput = row.querySelector('[data-field="qty"]');
         
-        if (code && !isNaN(qty) && qty > 0) {
-            const material = materialDB[code];
-            if (material) {
-                items.push({
-                    code: code,
-                    name: code,
-                    qty: qty,
-                    unitWeight: material.weight,
-                    unitVolume: material.volume,
-                    totalWeight: qty * material.weight,
-                    totalVolume: qty * material.volume
-                });
+        if (codeInput && qtyInput) {
+            const code = codeInput.value;
+            const qty = parseInt(qtyInput.value);
+            
+            if (code && !isNaN(qty) && qty > 0) {
+                const material = materialDB[code];
+                if (material) {
+                    items.push({
+                        code: code,
+                        name: code,
+                        qty: qty,
+                        unitWeight: material.weight,
+                        unitVolume: material.volume,
+                        totalWeight: qty * material.weight,
+                        totalVolume: qty * material.volume
+                    });
+                }
             }
         }
     });
@@ -651,11 +692,31 @@ function mtcFindDualLimitCombo(remainingItems, trip, maxWeight, maxVolume) {
     let bestCombo = null;
     let bestScore = -1;
     
+    // 预计算物品的密度，便于快速筛选
+    const itemsWithDensity = availableItems.map(item => ({
+        ...item,
+        density: item.unitWeight / item.unitVolume
+    }));
+    
+    // 按密度排序，便于快速找到互补的物品
+    itemsWithDensity.sort((a, b) => a.density - b.density);
+    
+    // 目标密度
+    const targetDensity = remainingWeight / remainingVolume;
+    
     // 尝试所有两种物品的组合
-    for (let i = 0; i < availableItems.length; i++) {
-        for (let j = i + 1; j < availableItems.length; j++) {
-            const item1 = availableItems[i];
-            const item2 = availableItems[j];
+    for (let i = 0; i < itemsWithDensity.length; i++) {
+        for (let j = i + 1; j < itemsWithDensity.length; j++) {
+            const item1 = itemsWithDensity[i];
+            const item2 = itemsWithDensity[j];
+            
+            // 跳过密度相近的物品，提高效率
+            const densityDiff = Math.abs(item1.density - item2.density);
+            if (densityDiff < 0.1) continue;
+            
+            // 跳过与目标密度相差太远的组合
+            const avgDensity = (item1.density + item2.density) / 2;
+            if (Math.abs(avgDensity - targetDensity) > targetDensity * 0.5) continue;
             
             // 解线性方程组
             // w1*x + w2*y = remainingWeight
@@ -684,12 +745,16 @@ function mtcFindDualLimitCombo(remainingItems, trip, maxWeight, maxVolume) {
             const actualWeight = qty1 * w1 + qty2 * w2;
             const actualVolume = qty1 * v1 + qty2 * v2;
             
+            // 检查是否超过容量
+            if (actualWeight > remainingWeight || actualVolume > remainingVolume) continue;
+            
             // 计算利用率
             const weightUtil = actualWeight / remainingWeight;
             const volumeUtil = actualVolume / remainingVolume;
             
-            // 计算得分（优先选择利用率高的组合）
-            const score = (weightUtil + volumeUtil) / 2;
+            // 计算得分（优先选择利用率高且平衡的组合）
+            const balanceScore = 1 - Math.abs(weightUtil - volumeUtil);
+            const score = (weightUtil + volumeUtil) / 2 * balanceScore;
             
             if (score > bestScore && score > 0.95) {
                 bestScore = score;
@@ -697,6 +762,11 @@ function mtcFindDualLimitCombo(remainingItems, trip, maxWeight, maxVolume) {
                     { item: item1, qty: qty1 },
                     { item: item2, qty: qty2 }
                 ];
+                
+                // 找到非常好的组合后，提前结束搜索
+                if (score > 0.99) {
+                    return bestCombo;
+                }
             }
         }
     }
@@ -921,48 +991,6 @@ function mtcInit() {
 }
 
 /**
- * 高精度数值舍入
- * @param {number} num - 要舍入的数字
- * @param {number} decimals - 小数位数
- * @returns {number} 舍入后的数字
- */
-function round(num, decimals = 2) {
-    if (!isFinite(num)) return 0;
-    const factor = Math.pow(10, decimals);
-    return Math.round((num + Number.EPSILON) * factor) / factor;
-}
-
-/**
- * 转义HTML特殊字符，防止XSS攻击
- * @param {string} text - 要转义的文本
- * @returns {string} 转义后的文本
- */
-function escapeHtml(text) {
-    if (typeof text !== 'string') return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-/**
- * 防抖函数
- * @param {Function} func - 要防抖的函数
- * @param {number} wait - 等待时间（毫秒）
- * @returns {Function} 防抖后的函数
- */
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-/**
  * 初始化主题
  */
 function initTheme() {
@@ -970,9 +998,53 @@ function initTheme() {
     document.documentElement.setAttribute('data-theme', savedTheme);
 }
 
-// MTC 页面加载完成后初始化
-if (window.location.pathname.includes('MTC.html')) {
-    window.onload = function() {
-        mtcInit();
+/**
+ * 显示确认对话框（统一风格）
+ */
+function showConfirm(message, onConfirm, onCancel) {
+    const existing = document.querySelector('.confirm-dialog');
+    if (existing) existing.remove();
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.innerHTML = `
+        <div class="confirm-overlay"></div>
+        <div class="confirm-content">
+            <div class="confirm-icon">❓</div>
+            <div class="confirm-message">${escapeHtml(message)}</div>
+            <div class="confirm-buttons">
+                <button class="btn btn-secondary confirm-cancel">取消</button>
+                <button class="btn btn-danger confirm-ok">确定</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const cancelBtn = dialog.querySelector('.confirm-cancel');
+    const okBtn = dialog.querySelector('.confirm-ok');
+    const overlay = dialog.querySelector('.confirm-overlay');
+
+    const closeDialog = () => {
+        dialog.remove();
     };
+
+    cancelBtn.addEventListener('click', () => {
+        closeDialog();
+        if (onCancel) onCancel();
+    });
+
+    okBtn.addEventListener('click', () => {
+        closeDialog();
+        if (onConfirm) onConfirm();
+    });
+
+    overlay.addEventListener('click', closeDialog);
+}
+
+// MTC 页面加载完成后初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mtcInit);
+} else {
+    mtcInit();
 }

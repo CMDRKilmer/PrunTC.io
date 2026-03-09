@@ -41,7 +41,9 @@ class CargoOptimizer {
         this.nextId = 1;
         /** @type {Map<string, OptimizeResult>} */
         this.cache = new Map();
-        this.maxCacheSize = 10;
+        this.maxCacheSize = 50; // 增加缓存大小
+        this.cacheAccessOrder = []; // 用于 LRU 缓存
+        this.#loadCache = new Map(); // 装载计算缓存
     }
 
     /**
@@ -138,6 +140,7 @@ class CargoOptimizer {
     clearCache() {
         this.cache.clear();
         this.#loadCache.clear();
+        this.cacheAccessOrder = [];
     }
 
     // 缓存 calculateLoadForDays 结果
@@ -150,7 +153,13 @@ class CargoOptimizer {
      * @returns {LoadResult} 装载方案
      */
     calculateLoadForDays(validItems, days) {
-        const cacheKey = `load_${days.toFixed(6)}`;
+        // 生成更精确的缓存键
+        const itemsKey = validItems
+            .sort((a, b) => a.code.localeCompare(b.code))
+            .map(i => `${i.id}:${i.inventory}:${i.dailyConsume}:${i.unitWeight}:${i.unitVolume}`)
+            .join('|');
+        const cacheKey = `load_${days.toFixed(6)}_${this.simpleHash(itemsKey)}`;
+        
         if (this.#loadCache.has(cacheKey)) {
             return this.#loadCache.get(cacheKey);
         }
@@ -203,6 +212,13 @@ class CargoOptimizer {
             totalVolume: round(totalVolume, 4),
             load
         };
+        
+        // 限制缓存大小
+        if (this.#loadCache.size >= 200) {
+            const firstKey = this.#loadCache.keys().next().value;
+            this.#loadCache.delete(firstKey);
+        }
+        
         this.#loadCache.set(cacheKey, result);
         return result;
     }
@@ -216,8 +232,9 @@ class CargoOptimizer {
     optimize(capacityWeight, capacityVolume) {
         // 检查缓存
         const cacheKey = this.generateCacheKey(capacityWeight, capacityVolume);
-        if (this.cache.has(cacheKey)) {
-            return this.cache.get(cacheKey);
+        const cachedResult = this.getCache(cacheKey);
+        if (cachedResult) {
+            return cachedResult;
         }
 
         // 验证容量
@@ -320,73 +337,191 @@ class CargoOptimizer {
     }
 
     /**
-     * 生成缓存键
+     * 生成更紧凑的缓存键
      * @param {number} capacityWeight - 重量容量
      * @param {number} capacityVolume - 体积容量
      * @returns {string} 缓存键
      */
     generateCacheKey(capacityWeight, capacityVolume) {
-        const itemsKey = this.items.map(i => `${i.code}:${i.inventory}:${i.dailyConsume}`).join('|');
-        return `${capacityWeight}-${capacityVolume}-${itemsKey}`;
+        // 使用更紧凑的格式，只包含关键信息
+        const itemsKey = this.items
+            .sort((a, b) => a.code.localeCompare(b.code)) // 排序确保顺序一致
+            .map(i => `${i.code}:${i.inventory}:${i.dailyConsume}:${i.unitWeight}:${i.unitVolume}`)
+            .join('|');
+        
+        // 使用哈希函数生成更短的键
+        const hash = this.simpleHash(itemsKey);
+        return `${capacityWeight}:${capacityVolume}:${hash}`;
     }
 
     /**
-     * 设置缓存
+     * 简单哈希函数
+     * @param {string} str - 输入字符串
+     * @returns {number} 哈希值
+     */
+    simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // 转换为32位整数
+        }
+        return Math.abs(hash);
+    }
+
+    /**
+     * 获取缓存（更新访问顺序）
+     * @param {string} key - 缓存键
+     * @returns {OptimizeResult|null} 缓存值
+     */
+    getCache(key) {
+        if (this.cache.has(key)) {
+            // 更新访问顺序
+            const index = this.cacheAccessOrder.indexOf(key);
+            if (index > -1) {
+                this.cacheAccessOrder.splice(index, 1);
+                this.cacheAccessOrder.push(key);
+            }
+            return this.cache.get(key);
+        }
+        return null;
+    }
+
+    /**
+     * 设置缓存（LRU 策略）
      * @param {string} key - 缓存键
      * @param {OptimizeResult} value - 缓存值
      */
     setCache(key, value) {
-        if (this.cache.size >= this.maxCacheSize) {
-            const firstKey = this.cache.keys().next().value;
-            this.cache.delete(firstKey);
+        // 移除已存在的键（如果有）
+        if (this.cache.has(key)) {
+            const index = this.cacheAccessOrder.indexOf(key);
+            if (index > -1) {
+                this.cacheAccessOrder.splice(index, 1);
+            }
+        } else if (this.cache.size >= this.maxCacheSize) {
+            // 删除最久未使用的项
+            const lruKey = this.cacheAccessOrder.shift();
+            if (lruKey) {
+                this.cache.delete(lruKey);
+            }
         }
+        
+        // 添加到缓存和访问顺序
         this.cache.set(key, value);
+        this.cacheAccessOrder.push(key);
     }
+}
+
+// Web Worker 实例
+let optimizerWorker = null;
+let workerTaskId = 0;
+const workerTasks = new Map();
+const MAX_WORKER_TASKS = 100; // 最大任务数限制
+
+// 初始化 Worker
+function initWorker() {
+    if (optimizerWorker) return;
+    
+    try {
+        optimizerWorker = new Worker('optimizer.worker.js');
+        
+        optimizerWorker.addEventListener('message', (event) => {
+            const { id, success, result, error } = event.data;
+            const task = workerTasks.get(id);
+            
+            if (task) {
+                const { resolve, reject } = task;
+                workerTasks.delete(id);
+                
+                if (success) {
+                    resolve(result);
+                } else {
+                    reject(new Error(error));
+                }
+            }
+        });
+        
+        optimizerWorker.addEventListener('error', (error) => {
+            console.error('Worker error:', error);
+            // 清理所有任务
+            workerTasks.forEach(({ reject }) => {
+                reject(new Error('Worker error'));
+            });
+            workerTasks.clear();
+            // 尝试重新初始化 Worker
+            setTimeout(() => {
+                optimizerWorker = null;
+                initWorker();
+            }, 1000);
+        });
+    } catch (error) {
+        console.error('Failed to create worker:', error);
+        // 降级到同步计算
+        optimizerWorker = null;
+    }
+}
+
+// 向 Worker 发送任务
+function sendWorkerTask(action, params) {
+    return new Promise((resolve, reject) => {
+        if (!optimizerWorker) {
+            // 降级到同步计算
+            try {
+                const result = optimizer.optimize(params.capacityWeight, params.capacityVolume);
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+            return;
+        }
+        
+        // 限制任务数量，防止任务堆积
+        if (workerTasks.size >= MAX_WORKER_TASKS) {
+            reject(new Error('Too many worker tasks'));
+            return;
+        }
+        
+        const id = ++workerTaskId;
+        workerTasks.set(id, { resolve, reject });
+        
+        try {
+            optimizerWorker.postMessage({ id, action, params });
+        } catch (error) {
+            console.error('Failed to send task to worker:', error);
+            workerTasks.delete(id);
+            // 降级到同步计算
+            try {
+                const result = optimizer.optimize(params.capacityWeight, params.capacityVolume);
+                resolve(result);
+            } catch (err) {
+                reject(err);
+            }
+        }
+    });
+}
+
+// 清理 Worker
+function cleanupWorker() {
+    if (optimizerWorker) {
+        optimizerWorker.terminate();
+        optimizerWorker = null;
+    }
+    workerTasks.clear();
 }
 
 const optimizer = new CargoOptimizer();
 
-/**
- * 高精度数值舍入
- * @param {number} num - 要舍入的数字
- * @param {number} decimals - 小数位数
- * @returns {number} 舍入后的数字
- */
-function round(num, decimals = 2) {
-    if (!isFinite(num)) return 0;
-    const factor = Math.pow(10, decimals);
-    return Math.round((num + Number.EPSILON) * factor) / factor;
-}
+// 使用 Utils 模块（如果可用）
+const round = typeof Utils !== 'undefined' ? Utils.round : (n, d) => Number(n.toFixed(d || 2));
+const escapeHtml = typeof Utils !== 'undefined' ? Utils.escapeHtml : (t) => t;
+const debounce = typeof Utils !== 'undefined' ? Utils.debounce : (f, w) => f;
 
-/**
- * 转义HTML特殊字符，防止XSS攻击
- * @param {string} text - 要转义的文本
- * @returns {string} 转义后的文本
- */
-function escapeHtml(text) {
-    if (typeof text !== 'string') return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+// 页面加载时初始化 Worker
+window.addEventListener('load', initWorker);
 
-/**
- * 防抖函数
- * @param {Function} func - 要防抖的函数
- * @param {number} wait - 等待时间（毫秒）
- * @returns {Function} 防抖后的函数
- */
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
+// 页面卸载时清理 Worker
+window.addEventListener('unload', cleanupWorker);
 
 /**
  * 更新船舱容量
@@ -684,7 +819,7 @@ function loadExampleData() {
 /**
  * 执行优化计算
  */
-function optimize() {
+async function optimize() {
     const btn = document.querySelector('.btn-primary');
     try {
         btn.classList.add('loading');
@@ -697,7 +832,14 @@ function optimize() {
             return;
         }
 
-        const result = optimizer.optimize(capacityWeight, capacityVolume);
+        // 确保 Worker 已初始化
+        initWorker();
+
+        const result = await sendWorkerTask('optimize', {
+            capacityWeight,
+            capacityVolume,
+            items: optimizer.items
+        });
 
         if (!result) {
             showNotification('无法找到满足约束的装载方案！请检查输入数据或增加船舱容量。', 'warning');
@@ -889,18 +1031,6 @@ window.onload = function() {
 let mtcItems = [];
 let mtcItemIdCounter = 0;
 
-// 船舱类型名称映射
-const shipTypeNames = {
-    'TCB': 'TCB 微型货舱',
-    'VSC': 'VSC 超小型货舱',
-    'SCB': 'SCB 小型货舱',
-    'MCB': 'MCB 中型货舱',
-    'LCB': 'LCB 大型货舱',
-    'HCB': 'HCB 巨型货舱',
-    'VCB': 'VCB 高容积货舱',
-    'WCB': 'WCB 高负荷货舱'
-};
-
 /**
  * MTC 统一的自动匹配函数（防抖200ms）
  */
@@ -1026,11 +1156,13 @@ function mtcValidateQty(itemId) {
  * MTC 删除物品行
  */
 function mtcRemoveItem(itemId) {
-    const row = document.querySelector(`[data-item-id="${itemId}"]`);
-    if (row) {
-        row.remove();
-        mtcUpdateItemCount();
-    }
+    showConfirm('确定要删除这个物品吗？', () => {
+        const row = document.querySelector(`[data-item-id="${itemId}"]`);
+        if (row) {
+            row.remove();
+            mtcUpdateItemCount();
+        }
+    });
 }
 
 /**
@@ -1129,7 +1261,7 @@ function mtcAddItemWithData(code, qty) {
  * MTC 重置所有
  */
 function mtcResetAll() {
-    if (confirm('确定要清空所有物品吗？')) {
+    showConfirm('确定要清空所有物品吗？', () => {
         document.getElementById('itemsContainer').innerHTML = '';
         mtcItemIdCounter = 0;
         mtcAddItem();
@@ -1137,7 +1269,7 @@ function mtcResetAll() {
         mtcUpdateItemCount();
         mtcHideResult();
         mtcHideError();
-    }
+    });
 }
 
 /**

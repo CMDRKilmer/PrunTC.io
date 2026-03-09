@@ -25,51 +25,44 @@
             <!-- 运输限制条件 -->
             <section class="card" aria-labelledby="constraints-heading">
                 <h2 id="constraints-heading">📋 运输限制条件</h2>
-                <div class="constraints-box">
-                    <h3>⚙️ 当前运输配置</h3>
-                    <div class="constraint-item">
-                        <span class="constraint-icon">⚖️</span>
-                        <span>单次运输重量上限：<strong id="maxWeight">500</strong> 吨</span>
+                <div class="constraints-wrapper">
+                    <div class="constraints-box">
+                        <h3>⚙️ 当前运输配置</h3>
+                        <div class="constraint-item">
+                            <span class="constraint-icon">🔄</span>
+                            <span>物品组合规则：每次运输可同时装载多种物品，但总重量和总体积不能超过上限</span>
+                        </div>
+                        <div class="constraint-item">
+                            <span class="constraint-icon">🎯</span>
+                            <span>优化目标：在满足约束条件下，最小化总运输次数</span>
+                        </div>
                     </div>
-                    <div class="constraint-item">
-                        <span class="constraint-icon">📦</span>
-                        <span>单次运输体积上限：<strong id="maxVolume">500</strong> m³</span>
-                    </div>
-                    <div class="constraint-item">
-                        <span class="constraint-icon">🔄</span>
-                        <span>物品组合规则：每次运输可同时装载多种物品，但总重量和总体积不能超过上限</span>
-                    </div>
-                    <div class="constraint-item">
-                        <span class="constraint-icon">🎯</span>
-                        <span>优化目标：在满足约束条件下，最小化总运输次数</span>
-                    </div>
-                </div>
-                
-                <!-- 船舱容量设置 -->
-                <div class="form-grid" role="group" aria-label="运输容量配置">
-                    <div class="form-group">
-                        <label for="shipType">🚀 船舱类型</label>
-                        <select id="shipType" onchange="mtcUpdateShipCapacity()" aria-describedby="shipType-desc">
-                            <option value="">-- 选择船舱 --</option>
-                            <option value="TCB">TCB 微型货舱 (100t/100m³)</option>
-                            <option value="VSC">VSC 超小型货舱 (250t/250m³)</option>
-                            <option value="SCB" selected>SCB 小型货舱 (500t/500m³)</option>
-                            <option value="MCB">MCB 中型货舱 (1000t/1000m³)</option>
-                            <option value="LCB">LCB 大型货舱 (2000t/2000m³)</option>
-                            <option value="HCB">HCB 巨型货舱 (5000t/5000m³)</option>
-                            <option value="VCB">VCB 高容积货舱 (1000t/3000m³)</option>
-                            <option value="WCB">WCB 高负荷货舱 (3000t/1000m³)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="maxWeightInput">⚖️ 重量容量 (吨)</label>
-                        <input type="number" id="maxWeightInput" value="500" min="1" step="100" 
-                            onchange="mtcUpdateConstraintDisplay()">
-                    </div>
-                    <div class="form-group">
-                        <label for="maxVolumeInput">📦 体积容量 (m³)</label>
-                        <input type="number" id="maxVolumeInput" value="500" min="1" step="100" 
-                            onchange="mtcUpdateConstraintDisplay()">
+                    <div class="ship-info-box">
+                        <h3>🚀 飞船信息</h3>
+                        <div class="ship-info-item">
+                            <span class="ship-info-label">船舱类型：</span>
+                            <select id="shipType" onchange="mtcUpdateShipCapacity()">
+                                <option value="">-- 选择船舱 --</option>
+                                <option value="TCB">TCB 微型货舱</option>
+                                <option value="VSC">VSC 超小型货舱</option>
+                                <option value="SCB" selected>SCB 小型货舱</option>
+                                <option value="MCB">MCB 中型货舱</option>
+                                <option value="LCB">LCB 大型货舱</option>
+                                <option value="HCB">HCB 巨型货舱</option>
+                                <option value="VCB">VCB 高容积货舱</option>
+                                <option value="WCB">WCB 高负荷货舱</option>
+                            </select>
+                        </div>
+                        <div class="ship-info-item">
+                            <span class="ship-info-label">重量容量（吨）：</span>
+                            <input type="number" id="maxWeightInput" value="500" min="1" step="100" 
+                                onchange="mtcUpdateConstraintDisplay()">
+                        </div>
+                        <div class="ship-info-item">
+                            <span class="ship-info-label">体积容量（m³）：</span>
+                            <input type="number" id="maxVolumeInput" value="500" min="1" step="100" 
+                                onchange="mtcUpdateConstraintDisplay()">
+                        </div>
                     </div>
                 </div>
             </section>
@@ -77,12 +70,6 @@
             <!-- 物品输入区域 -->
             <section class="card" aria-labelledby="items-heading">
                 <h2 id="items-heading">📦 物品信息 <span id="itemCount" class="highlight">0 种物品</span></h2>
-                
-                <!-- 快速示例 -->
-                <div class="quick-examples">
-                    <span style="color: var(--text-muted); margin-right: 10px;">快速示例：</span>
-                    <button class="btn-example" onclick="mtcLoadExample('INS-MCG')">INS + MCG</button>
-                </div>
                 
                 <!-- 错误提示 -->
                 <div id="errorMessage" class="error-message" role="alert"></div>
@@ -95,7 +82,8 @@
                 <!-- 操作按钮 -->
                 <div class="action-buttons">
                     <button class="btn btn-add" onclick="mtcAddItem()">➕ 添加物品</button>
-                    <button class="btn btn-secondary" onclick="mtcResetAll()">🔄 重置</button>
+                    <button class="btn btn-secondary" onclick="mtcLoadExample()">📋 示例数据</button>
+                    <button class="btn btn-danger" onclick="mtcResetAll()">🗑️ 清空</button>
                 </div>
             </section>
             
@@ -175,7 +163,9 @@
         </footer>
     </div>
 
+    <!-- 引入脚本 -->
     <script src="data.js"></script>
+    <script src="utils.js"></script>
     <script src="mtc.js"></script>
 </body>
 </html>
