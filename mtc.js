@@ -693,29 +693,33 @@ function mtcFindDualLimitCombo(remainingItems, trip, maxWeight, maxVolume) {
     let bestScore = -1;
     
     // 预计算物品的密度，便于快速筛选
+    // 创建新数组用于排序，同时保留对原始物品的引用
     const itemsWithDensity = availableItems.map(item => ({
         ...item,
+        _original: item,
         density: item.unitWeight / item.unitVolume
     }));
-    
+
     // 按密度排序，便于快速找到互补的物品
     itemsWithDensity.sort((a, b) => a.density - b.density);
-    
+
     // 目标密度
     const targetDensity = remainingWeight / remainingVolume;
-    
+
     // 尝试所有两种物品的组合
     for (let i = 0; i < itemsWithDensity.length; i++) {
         for (let j = i + 1; j < itemsWithDensity.length; j++) {
-            const item1 = itemsWithDensity[i];
-            const item2 = itemsWithDensity[j];
-            
+            const item1 = itemsWithDensity[i]._original;
+            const item2 = itemsWithDensity[j]._original;
+            const density1 = itemsWithDensity[i].density;
+            const density2 = itemsWithDensity[j].density;
+
             // 跳过密度相近的物品，提高效率
-            const densityDiff = Math.abs(item1.density - item2.density);
+            const densityDiff = Math.abs(density1 - density2);
             if (densityDiff < 0.1) continue;
-            
+
             // 跳过与目标密度相差太远的组合
-            const avgDensity = (item1.density + item2.density) / 2;
+            const avgDensity = (density1 + density2) / 2;
             if (Math.abs(avgDensity - targetDensity) > targetDensity * 0.5) continue;
             
             // 解线性方程组
@@ -982,20 +986,10 @@ function mtcHideResult() {
  * MTC 初始化
  */
 function mtcInit() {
-    // 加载保存的主题
     initTheme();
-    // 添加默认物品行
     mtcAddItem();
     mtcAddItem();
     mtcUpdateItemCount();
-}
-
-/**
- * 初始化主题
- */
-function initTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
 }
 
 /**
