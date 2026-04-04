@@ -287,13 +287,13 @@ class CargoOptimizer {
         );
         
         const precision = 0.001;
-        const earlyTerminationThreshold = 0.999; // 99.9% 填充率时提前终止
+        const earlyTerminationThreshold = 0.999;
 
         let bestDays = minDays;
         let bestFillRate = 0;
         let bestLoad = null;
 
-        let left = Math.max(0.001, minDays - 10);
+        let left = 0.001;
         let right = maxSearchDays;
         let iterations = 0;
         const maxIterations = 500; // 减少最大迭代次数
@@ -326,12 +326,25 @@ class CargoOptimizer {
         }
 
         // 回退方案
-        if (!bestLoad) {
-            const fallbackDays = Math.max(0.001, minDays - 10);
-            const result = this.calculateLoadForDays(validItems, fallbackDays);
-            bestLoad = result.load;
+        if (!bestLoad || bestFillRate > 1) {
+            let fallbackDays = 0.001;
+            let fallbackResult = null;
+            const searchLimit = Math.min(maxSearchDays, 1000);
+            for (let testDays = 0.001; testDays <= searchLimit; testDays += 0.5) {
+                const result = this.calculateLoadForDays(validItems, testDays);
+                if (result.totalWeight <= capacityWeight && result.totalVolume <= capacityVolume) {
+                    fallbackDays = testDays;
+                    fallbackResult = result;
+                    break;
+                }
+            }
+            if (!fallbackResult) {
+                fallbackDays = 0.001;
+                fallbackResult = this.calculateLoadForDays(validItems, fallbackDays);
+            }
+            bestLoad = fallbackResult.load;
             bestDays = fallbackDays;
-            bestFillRate = Math.max(result.totalWeight / capacityWeight, result.totalVolume / capacityVolume);
+            bestFillRate = Math.max(fallbackResult.totalWeight / capacityWeight, fallbackResult.totalVolume / capacityVolume);
         }
 
         // 计算最终结果
@@ -1095,240 +1108,227 @@ async function loadSelectedBases() {
             
             if (productionResponse.ok) {
                 const productionData = await productionResponse.json();
-                console.log(`基地 ${base.planetName} (${base.planetId}) 的生产数据:`, productionData);
                 
                 // 处理生产数据，提取消耗品和生产原料
                 if (productionData) {
+                    // 显示生产线输入品消耗量汇总
+                    let productionConsumeTotal = {};
+                    
                     // 检查数据结构
                     if (Array.isArray(productionData)) {
                         productionData.forEach(line => {
-                            console.log(`生产线:`, line);
-                            
                             // 参考 BURN 模块的计算逻辑
                             const capacity = line.Capacity || line.capacity || 1;
+                            const efficiency = line.Efficiency || line.efficiency || 1;
                             
                             // 处理 Orders 数组（循环订单）
                             if (line.Orders && Array.isArray(line.Orders)) {
                                 const burnOrders = line.Orders;
-                                let totalDuration = 0;
                                 
-                                // 计算总生产时间（毫秒）
+                                // 计算生产线的基础消耗率
+                                let productionConsumeRate = {};
+                                let totalDurationMs = 0;
+                                let activeOrderCount = 0;
+                                
+                                // 遍历所有订单，统计每种材料的总输入量和总生产时间
                                 burnOrders.forEach(order => {
-                                    if (order.Duration && order.Duration.Millis) {
-                                        totalDuration += order.Duration.Millis;
-                                    } else if (order.duration && order.duration.millis) {
-                                        totalDuration += order.duration.millis;
-                                    } else {
-                                        // 默认生产时间为 1 小时
-                                        totalDuration += 3600000;
+                                    // 跳过 StartedEpochMs 为 null 的等待订单
+                                    if (order.StartedEpochMs === null || order.StartedEpochMs === undefined) {
+                                        return;
                                     }
-                                });
-                                
-                                // 转换为天数
-                                totalDuration /= 86400000;
-                                
-                                // 计算每条订单的消耗
-                                burnOrders.forEach(order => {
-                                    console.log(`订单:`, order);
+                                    
+                                    activeOrderCount++;
+                                    
+                                    // 获取生产周期时间（毫秒）
+                                    const durationMs = order.DurationMs || 0;
+                                    totalDurationMs += durationMs;
                                     
                                     // 只处理订单输入（生产原料），不处理输出
                                     if (order.Inputs && Array.isArray(order.Inputs)) {
-                                        console.log(`订单 Inputs 数组:`, order.Inputs);
                                         order.Inputs.forEach(input => {
-                                            console.log(`输入项:`, input);
                                             if (input.MaterialTicker && input.MaterialAmount) {
-                                                // 计算消耗率：(材料数量 * 生产线容量) / 总生产时间
-                                                // 注意：每个订单的消耗率应该是独立的，不要重复计算
-                                                const rate = (input.MaterialAmount * capacity) / totalDuration;
-                                                const currentRate = allConsumables.get(input.MaterialTicker) || 0;
-                                                allConsumables.set(input.MaterialTicker, currentRate + rate);
-                                                console.log(`添加生产原料: ${input.MaterialTicker}, 速率: ${rate}, 容量: ${capacity}, 总时间: ${totalDuration} 天`);
+                                                productionConsumeRate[input.MaterialTicker] = (productionConsumeRate[input.MaterialTicker] || 0) + input.MaterialAmount;
                                             } else if (input.Ticker && input.Amount) {
-                                                const rate = (input.Amount * capacity) / totalDuration;
-                                                const currentRate = allConsumables.get(input.Ticker) || 0;
-                                                allConsumables.set(input.Ticker, currentRate + rate);
-                                                console.log(`添加生产原料: ${input.Ticker}, 速率: ${rate}`);
-                                            } else {
-                                                console.log(`输入项缺少必要字段:`, input);
+                                                productionConsumeRate[input.Ticker] = (productionConsumeRate[input.Ticker] || 0) + input.Amount;
                                             }
                                         });
                                     } else if (order.inputs && Array.isArray(order.inputs)) {
-                                        console.log(`订单 inputs 数组:`, order.inputs);
                                         order.inputs.forEach(input => {
-                                            console.log(`输入项:`, input);
                                             if (input.materialTicker && input.materialAmount) {
-                                                const rate = (input.materialAmount * capacity) / totalDuration;
-                                                const currentRate = allConsumables.get(input.materialTicker) || 0;
-                                                allConsumables.set(input.materialTicker, currentRate + rate);
-                                                console.log(`添加生产原料: ${input.materialTicker}, 速率: ${rate}`);
+                                                productionConsumeRate[input.materialTicker] = (productionConsumeRate[input.materialTicker] || 0) + input.materialAmount;
                                             } else if (input.ticker && input.amount) {
-                                                const rate = (input.amount * capacity) / totalDuration;
-                                                const currentRate = allConsumables.get(input.ticker) || 0;
-                                                allConsumables.set(input.ticker, currentRate + rate);
-                                                console.log(`添加生产原料: ${input.ticker}, 速率: ${rate}`);
-                                            } else {
-                                                console.log(`输入项缺少必要字段:`, input);
+                                                productionConsumeRate[input.ticker] = (productionConsumeRate[input.ticker] || 0) + input.amount;
                                             }
                                         });
                                     }
                                 });
+                                
+                                // 计算每日循环次数：86400000ms / 总DurationMs
+                                const avgDurationMs = activeOrderCount > 0 ? totalDurationMs / activeOrderCount : 0;
+                                const cyclesPerDay = avgDurationMs > 0 ? 86400000 / avgDurationMs : 1;
+                                
+                                // 计算每种材料的日消耗率 = 总输入量 × 每日循环次数
+                                for (const [ticker, totalInput] of Object.entries(productionConsumeRate)) {
+                                    const rate = totalInput * cyclesPerDay;
+                                    allConsumables.set(ticker, (allConsumables.get(ticker) || 0) + rate);
+                                    productionConsumeTotal[ticker] = (productionConsumeTotal[ticker] || 0) + rate;
+                                }
                             }
                         });
-                    } else if (typeof productionData === 'object') {
-                        // 可能是单个对象
-                        console.log(`生产数据是对象:`, productionData);
                     }
-                }
-                
-                // 获取劳动力数据（消耗品）
-                try {
-                    const workforceResponse = await fetch(`https://rest.fnar.net/workforce/${fioUsername}/${base.planetId}`, {
-                        headers: {
-                            'Authorization': fioAuthToken
-                        }
-                    });
-                    
-                    if (workforceResponse.ok) {
-                        const workforceData = await workforceResponse.json();
-                        console.log(`基地 ${base.planetName} (${base.planetId}) 的劳动力数据:`, workforceData);
-                        
-                        // 处理劳动力需求（消耗品）
-                        if (workforceData) {
-                            // 检查数据结构
-                            if (workforceData.Workforces && Array.isArray(workforceData.Workforces)) {
-                                // 处理 Workforces 数组
-                                workforceData.Workforces.forEach(tier => {
-                                    console.log(`劳动力层级:`, tier);
-                                    if (tier.Population > 1 && tier.Capacity > 0) {
-                                        if (tier.Needs && Array.isArray(tier.Needs)) {
-                                            tier.Needs.forEach(need => {
-                                                console.log(`需求:`, need);
-                                                if (need.MaterialTicker && need.UnitsPerInterval) {
-                                                    const currentRate = allConsumables.get(need.MaterialTicker) || 0;
-                                                    allConsumables.set(need.MaterialTicker, currentRate + need.UnitsPerInterval);
-                                                    console.log(`添加劳动力消耗品: ${need.MaterialTicker}, 速率: ${need.UnitsPerInterval}`);
-                                                } else if (need.materialTicker && need.unitsPerInterval) {
-                                                    const currentRate = allConsumables.get(need.materialTicker) || 0;
-                                                    allConsumables.set(need.materialTicker, currentRate + need.unitsPerInterval);
-                                                    console.log(`添加劳动力消耗品: ${need.materialTicker}, 速率: ${need.unitsPerInterval}`);
-                                                } else if (need.Ticker && need.Rate) {
-                                                    const currentRate = allConsumables.get(need.Ticker) || 0;
-                                                    allConsumables.set(need.Ticker, currentRate + need.Rate);
-                                                    console.log(`添加劳动力消耗品: ${need.Ticker}, 速率: ${need.Rate}`);
-                                                } else if (need.ticker && need.rate) {
-                                                    const currentRate = allConsumables.get(need.ticker) || 0;
-                                                    allConsumables.set(need.ticker, currentRate + need.rate);
-                                                    console.log(`添加劳动力消耗品: ${need.ticker}, 速率: ${need.rate}`);
-                                                } else {
-                                                    console.log(`需求缺少必要字段:`, need);
-                                                }
-                                            });
-                                        }
-                                    }
-                                });
-                            } else if (Array.isArray(workforceData)) {
-                                // 处理数组结构
-                                workforceData.forEach(tier => {
-                                    if (tier.Population > 1 && tier.Capacity > 0) {
-                                        if (tier.Needs && Array.isArray(tier.Needs)) {
-                                            tier.Needs.forEach(need => {
-                                                if (need.MaterialTicker && need.UnitsPerInterval) {
-                                                    const currentRate = allConsumables.get(need.MaterialTicker) || 0;
-                                                    allConsumables.set(need.MaterialTicker, currentRate + need.UnitsPerInterval);
-                                                    console.log(`添加劳动力消耗品: ${need.MaterialTicker}, 速率: ${need.UnitsPerInterval}`);
-                                                } else if (need.materialTicker && need.unitsPerInterval) {
-                                                    const currentRate = allConsumables.get(need.materialTicker) || 0;
-                                                    allConsumables.set(need.materialTicker, currentRate + need.unitsPerInterval);
-                                                    console.log(`添加劳动力消耗品: ${need.materialTicker}, 速率: ${need.unitsPerInterval}`);
-                                                }
-                                            });
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                    } else {
-                        console.log(`获取劳动力数据失败:`, workforceResponse.status, workforceResponse.statusText);
-                    }
-                } catch (error) {
-                    console.log(`获取劳动力数据出错:`, error);
                 }
             } else {
                 console.log(`获取生产数据失败 (${base.planetName}):`, productionResponse.status, productionResponse.statusText);
             }
             
-            // 获取基地的存储数据（当前库存）
-            const storageResponse = await fetch(`https://rest.fnar.net/storage/${fioUsername}/${base.planetId}`, {
-                headers: {
-                    'Authorization': fioAuthToken
-                }
-            });
-            
-            if (storageResponse.ok) {
-                const storageData = await storageResponse.json();
-                console.log(`基地 ${base.planetName} (${base.planetId}) 的存储数据:`, storageData);
-                
-                // 处理存储数据，获取当前库存
-                if (storageData) {
-                    if (Array.isArray(storageData)) {
-                        storageData.forEach(item => {
-                            if (item.Ticker && item.Amount) {
-                                allStorage.set(item.Ticker, item.Amount);
-                            }
-                        });
-                    } else if (storageData.StorageItems && Array.isArray(storageData.StorageItems)) {
-                        // 处理 StorageItems 数组
-                        storageData.StorageItems.forEach(item => {
-                            if (item.MaterialTicker && item.MaterialAmount) {
-                                allStorage.set(item.MaterialTicker, item.MaterialAmount);
-                                console.log(`添加存储: ${item.MaterialTicker}, 数量: ${item.MaterialAmount}`);
-                            } else if (item.Ticker && item.Amount) {
-                                allStorage.set(item.Ticker, item.Amount);
-                                console.log(`添加存储: ${item.Ticker}, 数量: ${item.Amount}`);
-                            } else {
-                                console.log(`存储项缺少必要字段:`, item);
-                            }
-                        });
+            // 获取劳动力数据（消耗品）
+            try {
+                const workforceResponse = await fetch(`https://rest.fnar.net/workforce/${fioUsername}/${base.planetId}`, {
+                    headers: {
+                        'Authorization': fioAuthToken
+                    }
+                });
+                    
+                if (workforceResponse.ok) {
+                    const workforceData = await workforceResponse.json();
+                        
+                    // 显示工人日常消耗汇总
+                    let workforceConsumeTotal = {};
+                        
+                    // 处理劳动力需求（消耗品）
+                    if (workforceData) {
+                        // 检查数据结构
+                        if (workforceData.Workforces && Array.isArray(workforceData.Workforces)) {
+                            // 处理 Workforces 数组
+                            workforceData.Workforces.forEach(tier => {
+                                if (tier.Population > 1 && tier.Capacity > 0) {
+                                    // WorkforceNeeds 是劳动力的日常消耗品（如 RAT、DW、OVE）
+                                    if (tier.WorkforceNeeds && Array.isArray(tier.WorkforceNeeds)) {
+                                        tier.WorkforceNeeds.forEach(need => {
+                                            if (need.MaterialTicker && need.UnitsPerInterval) {
+                                                const currentRate = allConsumables.get(need.MaterialTicker) || 0;
+                                                allConsumables.set(need.MaterialTicker, currentRate + need.UnitsPerInterval);
+                                                workforceConsumeTotal[need.MaterialTicker] = (workforceConsumeTotal[need.MaterialTicker] || 0) + need.UnitsPerInterval;
+                                            } else if (need.materialTicker && need.unitsPerInterval) {
+                                                const currentRate = allConsumables.get(need.materialTicker) || 0;
+                                                allConsumables.set(need.materialTicker, currentRate + need.unitsPerInterval);
+                                                workforceConsumeTotal[need.materialTicker] = (workforceConsumeTotal[need.materialTicker] || 0) + need.unitsPerInterval;
+                                            } else if (need.Ticker && need.Rate) {
+                                                const currentRate = allConsumables.get(need.Ticker) || 0;
+                                                allConsumables.set(need.Ticker, currentRate + need.Rate);
+                                                workforceConsumeTotal[need.Ticker] = (workforceConsumeTotal[need.Ticker] || 0) + need.Rate;
+                                            } else if (need.ticker && need.rate) {
+                                                const currentRate = allConsumables.get(need.ticker) || 0;
+                                                allConsumables.set(need.ticker, currentRate + need.rate);
+                                                workforceConsumeTotal[need.ticker] = (workforceConsumeTotal[need.ticker] || 0) + need.rate;
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        } else if (Array.isArray(workforceData)) {
+                            // 处理数组结构
+                            workforceData.forEach(tier => {
+                                if (tier.Population > 1 && tier.Capacity > 0) {
+                                    // WorkforceNeeds 是劳动力的日常消耗品（如 RAT、DW、OVE）
+                                    if (tier.WorkforceNeeds && Array.isArray(tier.WorkforceNeeds)) {
+                                        tier.WorkforceNeeds.forEach(need => {
+                                            if (need.MaterialTicker && need.UnitsPerInterval) {
+                                                const currentRate = allConsumables.get(need.MaterialTicker) || 0;
+                                                allConsumables.set(need.MaterialTicker, currentRate + need.UnitsPerInterval);
+                                                workforceConsumeTotal[need.MaterialTicker] = (workforceConsumeTotal[need.MaterialTicker] || 0) + need.UnitsPerInterval;
+                                            } else if (need.materialTicker && need.unitsPerInterval) {
+                                                const currentRate = allConsumables.get(need.materialTicker) || 0;
+                                                allConsumables.set(need.materialTicker, currentRate + need.unitsPerInterval);
+                                                workforceConsumeTotal[need.materialTicker] = (workforceConsumeTotal[need.materialTicker] || 0) + need.unitsPerInterval;
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                            
+                        // 显示工人日常消耗汇总
+                        console.log(`===== 工人日常消耗汇总 (${base.planetName}) =====`);
+                        for (const [ticker, rate] of Object.entries(workforceConsumeTotal)) {
+                            console.log(`  ${ticker}: ${rate}/天`);
+                        }
+                        console.log(`==========================================`);
                     }
                 }
-            } else {
-                console.log(`获取存储数据失败 (${base.planetName}):`, storageResponse.status, storageResponse.statusText);
+            } catch (error) {
+                console.log(`获取劳动力数据出错:`, error);
+            }
+            
+            // 获取基地的存储数据（当前库存）
+            try {
+                const storageResponse = await fetch(`https://rest.fnar.net/storage/${fioUsername}/${base.planetId}`, {
+                    headers: {
+                        'Authorization': fioAuthToken
+                    }
+                });
+            
+                if (storageResponse.ok) {
+                    const storageData = await storageResponse.json();
+                    
+                    // 处理存储数据，获取当前库存
+                    if (storageData) {
+                        if (Array.isArray(storageData)) {
+                            storageData.forEach(item => {
+                                if (item.Ticker && item.Amount) {
+                                    allStorage.set(item.Ticker, item.Amount);
+                                }
+                            });
+                        } else if (storageData.StorageItems && Array.isArray(storageData.StorageItems)) {
+                            // 处理 StorageItems 数组
+                            storageData.StorageItems.forEach(item => {
+                                if (item.MaterialTicker && item.MaterialAmount) {
+                                    allStorage.set(item.MaterialTicker, item.MaterialAmount);
+                                } else if (item.Ticker && item.Amount) {
+                                    allStorage.set(item.Ticker, item.Amount);
+                                }
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.log(`获取存储数据出错:`, error);
             }
         }
         
         console.log(`所有消耗品:`, Object.fromEntries(allConsumables));
         console.log(`所有存储:`, Object.fromEntries(allStorage));
         
-        // 合并消耗品和存储数据，确保所有物品都被添加
-        const allMaterials = new Set([...allConsumables.keys(), ...allStorage.keys()]);
+        // 只添加有消耗的物品到表单（根据用户要求：没有消耗的物品不要输入表单）
+        const materialsWithConsume = new Set(allConsumables.keys());
         
         // 直接清空现有物品（不显示确认对话框）
         optimizer.clearAllItems();
         document.getElementById('itemContainer').innerHTML = '';
         updateItemCount();
         
-        // 添加所有物品到表单
-        allMaterials.forEach(materialCode => {
-            addItem();
-            const items = document.querySelectorAll('.item-input-row');
-            const lastItem = items[items.length - 1];
-            const itemId = lastItem.getAttribute('data-id');
+        // 添加有消耗的物品到表单
+        materialsWithConsume.forEach(materialCode => {
+            const consumeRate = allConsumables.get(materialCode) || 0;
+            const inventory = allStorage.get(materialCode) || 0;
             
-            // 使用正确的字段名
-            lastItem.querySelector('[data-field="code"]').value = materialCode;
-            lastItem.querySelector('[data-field="dailyConsume"]').value = (allConsumables.get(materialCode) || 0).toFixed(2);
-            lastItem.querySelector('[data-field="inventory"]').value = allStorage.get(materialCode) || '0';
-            
-            // 触发物品代码变化，自动填充重量和体积
-            if (itemId) {
-                onItemCodeChange(parseInt(itemId));
+            // 从 materialDB 获取单位重量和体积
+            let unitWeight = 0;
+            let unitVolume = 0;
+            if (typeof materialDB !== 'undefined' && materialDB[materialCode]) {
+                unitWeight = materialDB[materialCode].weight || 0;
+                unitVolume = materialDB[materialCode].volume || 0;
             }
+            
+            // 直接使用 optimizer.addItem 添加完整数据
+            const newItem = optimizer.addItem(materialCode, inventory, consumeRate, unitWeight, unitVolume);
+            
+            // 同时添加到 DOM
+            addItemToDOM(newItem);
         });
         
         // 如果没有消耗品，尝试获取 burnrate 数据
         if (allConsumables.size === 0) {
-            console.log('未找到消耗品，尝试获取 burnrate 数据...');
-            
             // 获取用户的 burnrate 数据
             const burnrateResponse = await fetch(`https://rest.fnar.net/usersettings/burnrate/${fioUsername}`, {
                 headers: {
