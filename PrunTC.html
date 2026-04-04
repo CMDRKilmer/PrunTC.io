@@ -40,6 +40,44 @@
                 </div>
             </section>
             
+            <!-- FIO API 认证和基地选择 -->
+            <section class="card" aria-labelledby="fio-api-heading">
+                <h2 id="fio-api-heading">🚀 FIO API 集成</h2>
+                <div class="api-auth-section">
+                    <h3>🔐 API 认证</h3>
+                    <div class="api-auth-form">
+                        <div class="form-item">
+                            <label for="fioAuthType">认证方式：</label>
+                            <select id="fioAuthType" onchange="toggleAuthForm()">
+                                <option value="password">用户名密码</option>
+                                <option value="apikey">API 密钥</option>
+                            </select>
+                        </div>
+                        <div class="form-item" id="usernameField">
+                            <label for="fioUsername">FIO 用户名：</label>
+                            <input type="text" id="fioUsername" placeholder="输入 FIO 用户名">
+                        </div>
+                        <div class="form-item" id="passwordField">
+                            <label for="fioPassword">FIO 密码：</label>
+                            <input type="password" id="fioPassword" placeholder="输入 FIO 密码">
+                        </div>
+                        <div class="form-item" id="apiKeyField" style="display: none;">
+                            <label for="fioApiKey">API 密钥：</label>
+                            <input type="text" id="fioApiKey" placeholder="输入 FIO API 密钥">
+                        </div>
+                        <button class="btn btn-primary" onclick="fioLogin()" aria-label="登录 FIO API">🔑 登录</button>
+                        <button class="btn btn-secondary" onclick="fioLogout()" aria-label="登出 FIO API">🚪 登出</button>
+                        <div id="apiStatus" class="api-status" aria-live="polite"></div>
+                    </div>
+                </div>
+                
+                <div class="base-selection-section" style="margin-top: 20px; display: none;" id="baseSelectionSection">
+                    <h3>🏙️ 基地选择</h3>
+                    <div id="baseList" class="base-list" role="list" aria-label="基地列表"></div>
+                    <button class="btn btn-primary" onclick="loadSelectedBases()" aria-label="加载选中基地数据" style="margin-top: 10px;">📥 加载选中基地数据</button>
+                </div>
+            </section>
+            
             <!-- 运输限制条件 -->
             <section class="card" aria-labelledby="constraints-heading">
                 <h2 id="constraints-heading">📋 运输限制条件</h2>

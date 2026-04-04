@@ -881,7 +881,602 @@ window.onload = function() {
     document.getElementById('shipType').value = 'SCB';
     updateShipCapacity();
     initEventDelegation();
+    initFioApiEvents();
     // 添加两个默认物品行
     addItem();
     addItem();
 };
+
+// FIO API 相关函数
+let fioAuthToken = null;
+let fioUsername = null;
+let fioAuthType = 'password';
+
+/**
+ * FIO API 登录
+ */
+async function fioLogin() {
+    const authType = document.getElementById('fioAuthType').value;
+    const username = document.getElementById('fioUsername').value;
+    const password = document.getElementById('fioPassword').value;
+    const apiKey = document.getElementById('fioApiKey').value;
+    const statusDiv = document.getElementById('apiStatus');
+    
+    if (authType === 'password') {
+        if (!username || !password) {
+            statusDiv.innerHTML = '<span style="color: red;">请输入用户名和密码</span>';
+            return;
+        }
+    } else {
+        if (!username || !apiKey) {
+            statusDiv.innerHTML = '<span style="color: red;">请输入用户名和 API 密钥</span>';
+            return;
+        }
+    }
+    
+    statusDiv.innerHTML = '<span style="color: blue;">正在登录...</span>';
+    
+    try {
+        if (authType === 'password') {
+            // 使用用户名密码登录
+            const response = await fetch('https://rest.fnar.net/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    UserName: username,
+                    Password: password
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`登录失败: ${response.status} ${response.statusText} ${errorData.message || ''}`);
+            }
+            
+            const data = await response.json();
+            fioAuthToken = data.AuthToken;
+            fioUsername = username;
+            fioAuthType = authType;
+            
+            // 保存认证信息到 localStorage
+            localStorage.setItem('fioAuthToken', fioAuthToken);
+            localStorage.setItem('fioUsername', fioUsername);
+            localStorage.setItem('fioAuthType', fioAuthType);
+        } else {
+            // 使用 API 密钥登录（直接设置为认证令牌）
+            fioAuthToken = apiKey;
+            fioUsername = username;
+            fioAuthType = authType;
+            
+            // 保存认证信息到 localStorage
+            localStorage.setItem('fioAuthToken', fioAuthToken);
+            localStorage.setItem('fioUsername', fioUsername);
+            localStorage.setItem('fioAuthType', fioAuthType);
+        }
+        
+        statusDiv.innerHTML = '<span style="color: green;">登录成功！</span>';
+        
+        // 测试认证是否成功
+        const testResponse = await fetch(`https://rest.fnar.net/sites/planets/${fioUsername}`, {
+            headers: {
+                'Authorization': fioAuthToken
+            }
+        });
+        
+        if (!testResponse.ok) {
+            throw new Error(`认证失败: ${testResponse.status} ${testResponse.statusText}`);
+        }
+        
+        // 获取基地列表
+        await fioGetBases();
+    } catch (error) {
+        statusDiv.innerHTML = `<span style="color: red;">登录失败: ${error.message}</span>`;
+        clearAuthStorage();
+    }
+}
+
+/**
+ * 获取用户基地列表
+ */
+async function fioGetBases() {
+    if (!fioAuthToken || !fioUsername) {
+        return;
+    }
+    
+    const statusDiv = document.getElementById('apiStatus');
+    statusDiv.innerHTML = '<span style="color: blue;">正在获取基地列表...</span>';
+    
+    try {
+        // 获取用户有站点的星球
+        const response = await fetch(`https://rest.fnar.net/sites/planets/${fioUsername}`, {
+            headers: {
+                'Authorization': fioAuthToken
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('获取基地列表失败');
+        }
+        
+        const planets = await response.json();
+        
+        if (planets.length === 0) {
+            statusDiv.innerHTML = '<span style="color: orange;">未找到基地</span>';
+            return;
+        }
+        
+        // 获取每个基地的详细信息，提取星球名称
+        const baseInfoList = [];
+        for (const planetId of planets) {
+            try {
+                const siteResponse = await fetch(`https://rest.fnar.net/sites/${fioUsername}/${planetId}`, {
+                    headers: {
+                        'Authorization': fioAuthToken
+                    }
+                });
+                
+                if (siteResponse.ok) {
+                    const siteData = await siteResponse.json();
+                    const planetName = siteData.PlanetName || siteData.planetName || planetId;
+                    baseInfoList.push({ planetId, planetName });
+                    console.log(`基地 ${planetId} 的名称: ${planetName}`);
+                } else {
+                    // 如果获取失败，使用 ID 作为名称
+                    baseInfoList.push({ planetId, planetName: planetId });
+                }
+            } catch (error) {
+                // 如果出错，使用 ID 作为名称
+                baseInfoList.push({ planetId, planetName: planetId });
+            }
+        }
+        
+        // 显示基地选择界面
+        const baseSelectionSection = document.getElementById('baseSelectionSection');
+        const baseList = document.getElementById('baseList');
+        
+        baseSelectionSection.style.display = 'block';
+        baseList.innerHTML = '';
+        
+        // 为每个星球创建复选框
+        baseInfoList.forEach(base => {
+            const baseItem = document.createElement('div');
+            baseItem.className = 'base-item';
+            baseItem.innerHTML = `
+                <input type="checkbox" id="base-${base.planetId}" value="${base.planetId}" data-name="${base.planetName}">
+                <label for="base-${base.planetId}">${base.planetName}</label>
+            `;
+            baseList.appendChild(baseItem);
+        });
+        
+        statusDiv.innerHTML = `<span style="color: green;">找到 ${baseInfoList.length} 个基地</span>`;
+    } catch (error) {
+        statusDiv.innerHTML = `<span style="color: red;">获取基地列表失败: ${error.message}</span>`;
+    }
+}
+
+/**
+ * 加载选中基地的消耗品数据
+ */
+async function loadSelectedBases() {
+    if (!fioAuthToken || !fioUsername) {
+        document.getElementById('apiStatus').innerHTML = '<span style="color: red;">请先登录</span>';
+        return;
+    }
+    
+    // 获取选中的基地
+    const checkboxes = document.querySelectorAll('#baseList input[type="checkbox"]:checked');
+    const selectedBases = Array.from(checkboxes).map(cb => {
+        const planetId = cb.value;
+        const planetName = cb.getAttribute('data-name') || planetId;
+        return { planetId, planetName };
+    });
+    
+    if (selectedBases.length === 0) {
+        document.getElementById('apiStatus').innerHTML = '<span style="color: red;">请选择至少一个基地</span>';
+        return;
+    }
+    
+    document.getElementById('apiStatus').innerHTML = '<span style="color: blue;">正在加载基地数据...</span>';
+    
+    try {
+        const allConsumables = new Map();
+        const allStorage = new Map();
+        
+        // 遍历选中的基地
+        for (const base of selectedBases) {
+            // 获取基地的生产数据（消耗品）
+            const productionResponse = await fetch(`https://rest.fnar.net/production/${fioUsername}/${base.planetId}`, {
+                headers: {
+                    'Authorization': fioAuthToken
+                }
+            });
+            
+            if (productionResponse.ok) {
+                const productionData = await productionResponse.json();
+                console.log(`基地 ${base.planetName} (${base.planetId}) 的生产数据:`, productionData);
+                
+                // 处理生产数据，提取消耗品和生产原料
+                if (productionData) {
+                    // 检查数据结构
+                    if (Array.isArray(productionData)) {
+                        productionData.forEach(line => {
+                            console.log(`生产线:`, line);
+                            
+                            // 参考 BURN 模块的计算逻辑
+                            const capacity = line.Capacity || line.capacity || 1;
+                            
+                            // 处理 Orders 数组（循环订单）
+                            if (line.Orders && Array.isArray(line.Orders)) {
+                                const burnOrders = line.Orders;
+                                let totalDuration = 0;
+                                
+                                // 计算总生产时间（毫秒）
+                                burnOrders.forEach(order => {
+                                    if (order.Duration && order.Duration.Millis) {
+                                        totalDuration += order.Duration.Millis;
+                                    } else if (order.duration && order.duration.millis) {
+                                        totalDuration += order.duration.millis;
+                                    } else {
+                                        // 默认生产时间为 1 小时
+                                        totalDuration += 3600000;
+                                    }
+                                });
+                                
+                                // 转换为天数
+                                totalDuration /= 86400000;
+                                
+                                // 计算每条订单的消耗
+                                burnOrders.forEach(order => {
+                                    console.log(`订单:`, order);
+                                    
+                                    // 只处理订单输入（生产原料），不处理输出
+                                    if (order.Inputs && Array.isArray(order.Inputs)) {
+                                        console.log(`订单 Inputs 数组:`, order.Inputs);
+                                        order.Inputs.forEach(input => {
+                                            console.log(`输入项:`, input);
+                                            if (input.MaterialTicker && input.MaterialAmount) {
+                                                // 计算消耗率：(材料数量 * 生产线容量) / 总生产时间
+                                                // 注意：每个订单的消耗率应该是独立的，不要重复计算
+                                                const rate = (input.MaterialAmount * capacity) / totalDuration;
+                                                const currentRate = allConsumables.get(input.MaterialTicker) || 0;
+                                                allConsumables.set(input.MaterialTicker, currentRate + rate);
+                                                console.log(`添加生产原料: ${input.MaterialTicker}, 速率: ${rate}, 容量: ${capacity}, 总时间: ${totalDuration} 天`);
+                                            } else if (input.Ticker && input.Amount) {
+                                                const rate = (input.Amount * capacity) / totalDuration;
+                                                const currentRate = allConsumables.get(input.Ticker) || 0;
+                                                allConsumables.set(input.Ticker, currentRate + rate);
+                                                console.log(`添加生产原料: ${input.Ticker}, 速率: ${rate}`);
+                                            } else {
+                                                console.log(`输入项缺少必要字段:`, input);
+                                            }
+                                        });
+                                    } else if (order.inputs && Array.isArray(order.inputs)) {
+                                        console.log(`订单 inputs 数组:`, order.inputs);
+                                        order.inputs.forEach(input => {
+                                            console.log(`输入项:`, input);
+                                            if (input.materialTicker && input.materialAmount) {
+                                                const rate = (input.materialAmount * capacity) / totalDuration;
+                                                const currentRate = allConsumables.get(input.materialTicker) || 0;
+                                                allConsumables.set(input.materialTicker, currentRate + rate);
+                                                console.log(`添加生产原料: ${input.materialTicker}, 速率: ${rate}`);
+                                            } else if (input.ticker && input.amount) {
+                                                const rate = (input.amount * capacity) / totalDuration;
+                                                const currentRate = allConsumables.get(input.ticker) || 0;
+                                                allConsumables.set(input.ticker, currentRate + rate);
+                                                console.log(`添加生产原料: ${input.ticker}, 速率: ${rate}`);
+                                            } else {
+                                                console.log(`输入项缺少必要字段:`, input);
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    } else if (typeof productionData === 'object') {
+                        // 可能是单个对象
+                        console.log(`生产数据是对象:`, productionData);
+                    }
+                }
+                
+                // 获取劳动力数据（消耗品）
+                try {
+                    const workforceResponse = await fetch(`https://rest.fnar.net/workforce/${fioUsername}/${base.planetId}`, {
+                        headers: {
+                            'Authorization': fioAuthToken
+                        }
+                    });
+                    
+                    if (workforceResponse.ok) {
+                        const workforceData = await workforceResponse.json();
+                        console.log(`基地 ${base.planetName} (${base.planetId}) 的劳动力数据:`, workforceData);
+                        
+                        // 处理劳动力需求（消耗品）
+                        if (workforceData) {
+                            // 检查数据结构
+                            if (workforceData.Workforces && Array.isArray(workforceData.Workforces)) {
+                                // 处理 Workforces 数组
+                                workforceData.Workforces.forEach(tier => {
+                                    console.log(`劳动力层级:`, tier);
+                                    if (tier.Population > 1 && tier.Capacity > 0) {
+                                        if (tier.Needs && Array.isArray(tier.Needs)) {
+                                            tier.Needs.forEach(need => {
+                                                console.log(`需求:`, need);
+                                                if (need.MaterialTicker && need.UnitsPerInterval) {
+                                                    const currentRate = allConsumables.get(need.MaterialTicker) || 0;
+                                                    allConsumables.set(need.MaterialTicker, currentRate + need.UnitsPerInterval);
+                                                    console.log(`添加劳动力消耗品: ${need.MaterialTicker}, 速率: ${need.UnitsPerInterval}`);
+                                                } else if (need.materialTicker && need.unitsPerInterval) {
+                                                    const currentRate = allConsumables.get(need.materialTicker) || 0;
+                                                    allConsumables.set(need.materialTicker, currentRate + need.unitsPerInterval);
+                                                    console.log(`添加劳动力消耗品: ${need.materialTicker}, 速率: ${need.unitsPerInterval}`);
+                                                } else if (need.Ticker && need.Rate) {
+                                                    const currentRate = allConsumables.get(need.Ticker) || 0;
+                                                    allConsumables.set(need.Ticker, currentRate + need.Rate);
+                                                    console.log(`添加劳动力消耗品: ${need.Ticker}, 速率: ${need.Rate}`);
+                                                } else if (need.ticker && need.rate) {
+                                                    const currentRate = allConsumables.get(need.ticker) || 0;
+                                                    allConsumables.set(need.ticker, currentRate + need.rate);
+                                                    console.log(`添加劳动力消耗品: ${need.ticker}, 速率: ${need.rate}`);
+                                                } else {
+                                                    console.log(`需求缺少必要字段:`, need);
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                            } else if (Array.isArray(workforceData)) {
+                                // 处理数组结构
+                                workforceData.forEach(tier => {
+                                    if (tier.Population > 1 && tier.Capacity > 0) {
+                                        if (tier.Needs && Array.isArray(tier.Needs)) {
+                                            tier.Needs.forEach(need => {
+                                                if (need.MaterialTicker && need.UnitsPerInterval) {
+                                                    const currentRate = allConsumables.get(need.MaterialTicker) || 0;
+                                                    allConsumables.set(need.MaterialTicker, currentRate + need.UnitsPerInterval);
+                                                    console.log(`添加劳动力消耗品: ${need.MaterialTicker}, 速率: ${need.UnitsPerInterval}`);
+                                                } else if (need.materialTicker && need.unitsPerInterval) {
+                                                    const currentRate = allConsumables.get(need.materialTicker) || 0;
+                                                    allConsumables.set(need.materialTicker, currentRate + need.unitsPerInterval);
+                                                    console.log(`添加劳动力消耗品: ${need.materialTicker}, 速率: ${need.unitsPerInterval}`);
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        console.log(`获取劳动力数据失败:`, workforceResponse.status, workforceResponse.statusText);
+                    }
+                } catch (error) {
+                    console.log(`获取劳动力数据出错:`, error);
+                }
+            } else {
+                console.log(`获取生产数据失败 (${base.planetName}):`, productionResponse.status, productionResponse.statusText);
+            }
+            
+            // 获取基地的存储数据（当前库存）
+            const storageResponse = await fetch(`https://rest.fnar.net/storage/${fioUsername}/${base.planetId}`, {
+                headers: {
+                    'Authorization': fioAuthToken
+                }
+            });
+            
+            if (storageResponse.ok) {
+                const storageData = await storageResponse.json();
+                console.log(`基地 ${base.planetName} (${base.planetId}) 的存储数据:`, storageData);
+                
+                // 处理存储数据，获取当前库存
+                if (storageData) {
+                    if (Array.isArray(storageData)) {
+                        storageData.forEach(item => {
+                            if (item.Ticker && item.Amount) {
+                                allStorage.set(item.Ticker, item.Amount);
+                            }
+                        });
+                    } else if (storageData.StorageItems && Array.isArray(storageData.StorageItems)) {
+                        // 处理 StorageItems 数组
+                        storageData.StorageItems.forEach(item => {
+                            if (item.MaterialTicker && item.MaterialAmount) {
+                                allStorage.set(item.MaterialTicker, item.MaterialAmount);
+                                console.log(`添加存储: ${item.MaterialTicker}, 数量: ${item.MaterialAmount}`);
+                            } else if (item.Ticker && item.Amount) {
+                                allStorage.set(item.Ticker, item.Amount);
+                                console.log(`添加存储: ${item.Ticker}, 数量: ${item.Amount}`);
+                            } else {
+                                console.log(`存储项缺少必要字段:`, item);
+                            }
+                        });
+                    }
+                }
+            } else {
+                console.log(`获取存储数据失败 (${base.planetName}):`, storageResponse.status, storageResponse.statusText);
+            }
+        }
+        
+        console.log(`所有消耗品:`, Object.fromEntries(allConsumables));
+        console.log(`所有存储:`, Object.fromEntries(allStorage));
+        
+        // 合并消耗品和存储数据，确保所有物品都被添加
+        const allMaterials = new Set([...allConsumables.keys(), ...allStorage.keys()]);
+        
+        // 直接清空现有物品（不显示确认对话框）
+        optimizer.clearAllItems();
+        document.getElementById('itemContainer').innerHTML = '';
+        updateItemCount();
+        
+        // 添加所有物品到表单
+        allMaterials.forEach(materialCode => {
+            addItem();
+            const items = document.querySelectorAll('.item-input-row');
+            const lastItem = items[items.length - 1];
+            const itemId = lastItem.getAttribute('data-id');
+            
+            // 使用正确的字段名
+            lastItem.querySelector('[data-field="code"]').value = materialCode;
+            lastItem.querySelector('[data-field="dailyConsume"]').value = (allConsumables.get(materialCode) || 0).toFixed(2);
+            lastItem.querySelector('[data-field="inventory"]').value = allStorage.get(materialCode) || '0';
+            
+            // 触发物品代码变化，自动填充重量和体积
+            if (itemId) {
+                onItemCodeChange(parseInt(itemId));
+            }
+        });
+        
+        // 如果没有消耗品，尝试获取 burnrate 数据
+        if (allConsumables.size === 0) {
+            console.log('未找到消耗品，尝试获取 burnrate 数据...');
+            
+            // 获取用户的 burnrate 数据
+            const burnrateResponse = await fetch(`https://rest.fnar.net/usersettings/burnrate/${fioUsername}`, {
+                headers: {
+                    'Authorization': fioAuthToken
+                }
+            });
+            
+            if (burnrateResponse.ok) {
+                const burnrateData = await burnrateResponse.json();
+                console.log(`Burnrate 数据:`, burnrateData);
+                
+                // 处理 burnrate 数据
+                if (burnrateData && Array.isArray(burnrateData)) {
+                    burnrateData.forEach(item => {
+                        if (item.MaterialTicker && item.BurnRate) {
+                            allConsumables.set(item.MaterialTicker, item.BurnRate);
+                            console.log(`添加燃烧率: ${item.MaterialTicker}, 速率: ${item.BurnRate}`);
+                        }
+                    });
+                }
+            } else {
+                console.log(`获取 burnrate 数据失败:`, burnrateResponse.status, burnrateResponse.statusText);
+                
+                // 如果 burnrate 失败，尝试获取站点数据
+                console.log('尝试获取站点数据...');
+                for (const base of selectedBases) {
+                    const sitesResponse = await fetch(`https://rest.fnar.net/sites/${fioUsername}/${base.planetId}`, {
+                        headers: {
+                            'Authorization': fioAuthToken
+                        }
+                    });
+                    
+                    if (sitesResponse.ok) {
+                        const sitesData = await sitesResponse.json();
+                        console.log(`基地 ${base.planetName} (${base.planetId}) 的站点数据:`, sitesData);
+                    }
+                }
+            }
+        }
+        
+        document.getElementById('apiStatus').innerHTML = `<span style="color: green;">成功加载 ${allConsumables.size} 种消耗品</span>`;
+    } catch (error) {
+        console.error('加载基地数据错误:', error);
+        document.getElementById('apiStatus').innerHTML = `<span style="color: red;">加载基地数据失败: ${error.message}</span>`;
+    }
+}
+
+/**
+ * 切换认证表单显示
+ */
+function toggleAuthForm() {
+    const authType = document.getElementById('fioAuthType').value;
+    const usernameField = document.getElementById('usernameField');
+    const passwordField = document.getElementById('passwordField');
+    const apiKeyField = document.getElementById('apiKeyField');
+    
+    if (authType === 'password') {
+        usernameField.style.display = 'flex';
+        passwordField.style.display = 'flex';
+        apiKeyField.style.display = 'none';
+    } else {
+        usernameField.style.display = 'flex';
+        passwordField.style.display = 'none';
+        apiKeyField.style.display = 'flex';
+    }
+}
+
+/**
+ * 初始化 FIO API 相关事件
+ */
+function initFioApiEvents() {
+    // 从 localStorage 加载认证信息
+    loadAuthFromStorage();
+    
+    // 这里可以添加 FIO API 相关的事件监听
+}
+
+/**
+ * 从 localStorage 加载认证信息
+ */
+function loadAuthFromStorage() {
+    const savedToken = localStorage.getItem('fioAuthToken');
+    const savedUsername = localStorage.getItem('fioUsername');
+    const savedAuthType = localStorage.getItem('fioAuthType');
+    
+    if (savedToken && savedUsername) {
+        fioAuthToken = savedToken;
+        fioUsername = savedUsername;
+        fioAuthType = savedAuthType || 'password';
+        
+        // 恢复认证表单状态
+        document.getElementById('fioAuthType').value = fioAuthType;
+        document.getElementById('fioUsername').value = fioUsername;
+        toggleAuthForm();
+        
+        // 自动测试认证是否有效
+        testAuth();
+    }
+}
+
+/**
+ * 测试认证是否有效
+ */
+async function testAuth() {
+    if (!fioAuthToken || !fioUsername) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`https://rest.fnar.net/sites/planets/${fioUsername}`, {
+            headers: {
+                'Authorization': fioAuthToken
+            }
+        });
+        
+        if (response.ok) {
+            document.getElementById('apiStatus').innerHTML = '<span style="color: green;">已自动登录</span>';
+            await fioGetBases();
+        }
+    } catch (error) {
+        // 认证失败，清除存储
+        clearAuthStorage();
+    }
+}
+
+/**
+ * 清除认证存储
+ */
+function clearAuthStorage() {
+    localStorage.removeItem('fioAuthToken');
+    localStorage.removeItem('fioUsername');
+    localStorage.removeItem('fioAuthType');
+    fioAuthToken = null;
+    fioUsername = null;
+    fioAuthType = 'password';
+}
+
+/**
+ * FIO API 登出
+ */
+function fioLogout() {
+    clearAuthStorage();
+    document.getElementById('fioUsername').value = '';
+    document.getElementById('fioPassword').value = '';
+    document.getElementById('fioApiKey').value = '';
+    document.getElementById('fioAuthType').value = 'password';
+    toggleAuthForm();
+    document.getElementById('apiStatus').innerHTML = '<span style="color: orange;">已登出</span>';
+    document.getElementById('baseSelectionSection').style.display = 'none';
+    document.getElementById('baseList').innerHTML = '';
+}
