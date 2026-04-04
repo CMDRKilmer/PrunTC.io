@@ -293,7 +293,7 @@ class CargoOptimizer {
         let bestFillRate = 0;
         let bestLoad = null;
 
-        let left = 0.001;
+        let left = Math.max(0.001, minDays - 10);
         let right = maxSearchDays;
         let iterations = 0;
         const maxIterations = 500; // 减少最大迭代次数
@@ -1164,7 +1164,7 @@ async function loadSelectedBases() {
                                 });
                                 
                                 // 计算每日循环次数：86400000ms / 总DurationMs
-                                const avgDurationMs = activeOrderCount > 0 ? totalDurationMs / activeOrderCount : 0;
+                                const avgDurationMs = activeOrderCount > 0 ? totalDurationMs / activeOrderCount : 86400000;
                                 const cyclesPerDay = avgDurationMs > 0 ? 86400000 / avgDurationMs : 1;
                                 
                                 // 计算每种材料的日消耗率 = 总输入量 × 每日循环次数
