@@ -278,10 +278,5 @@ class CargoOptimizerCore {
     }
 }
 
-// 导出优化器核心类（用于模块化）
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { CargoOptimizerCore };
-}
-
 // ES6 模块导出
 export { CargoOptimizerCore };

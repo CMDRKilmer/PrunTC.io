@@ -91,7 +91,5 @@ const CONFIG = Object.freeze({
 /**
  * @type {Config}
  */
-CONFIG;
-
 // ES6 模块导出
 export { CONFIG };

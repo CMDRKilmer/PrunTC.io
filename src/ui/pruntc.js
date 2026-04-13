@@ -3,7 +3,7 @@
  * 负责处理补给运输计算器的界面交互
  */
 
-import CargoOptimizer from '../core/optimizers/CargoOptimizer.js';
+import { CargoOptimizerCore as CargoOptimizer } from '../core/optimizer.js';
 import { round, debounce, escapeHtml, showNotification, showConfirm, initTheme } from '../utils/index.js';
 import { getMaterialByCode, getShipTypeByType } from '../data/index.js';
 import { fioLogin, fioGetBases, fioLoadBaseData, restoreFioAuth } from '../api/fio.js';
@@ -194,55 +194,6 @@ export function onItemCodeChange(id) {
 export function addItem() {
     const newItem = optimizer.addItem();
     addItemToDOM(newItem);
-    updateItemCount();
-}
-
-/**
- * 添加单个物品到DOM（增量更新）
- */
-export function addItemToDOM(item) {
-    const container = document.getElementById('itemContainer');
-    
-    const div = document.createElement('div');
-    div.className = 'item-input-row item-row-pruntc';
-    div.setAttribute('data-id', item.id);
-    div.style.animation = 'itemSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
-    div.innerHTML = `
-        <div class="form-group">
-            <label>物品代码</label>
-            <input type="text" placeholder="如: GRN" value="${escapeHtml(item.code)}" 
-                data-field="code"
-                data-id="${item.id}"
-                class="code-input"
-                oninput="onItemCodeInput(${item.id})"
-                onchange="onItemCodeChange(${item.id})">
-        </div>
-        <div class="form-group">
-            <label>现有库存</label>
-            <input type="number" placeholder="库存" value="${item.inventory}" 
-                data-field="inventory"
-                data-id="${item.id}"
-                min="0">
-        </div>
-        <div class="form-group">
-            <label>每日消耗</label>
-            <input type="number" placeholder="每日消耗" value="${item.dailyConsume}" 
-                data-field="dailyConsume"
-                data-id="${item.id}"
-                min="0" step="0.01">
-        </div>
-        <div class="form-group">
-            <label>单位重量/体积</label>
-            <input type="text" placeholder="自动填充" value="${item.unitWeight}t / ${item.unitVolume}m³" 
-                data-field="info"
-                data-id="${item.id}"
-                readonly
-                style="background: var(--bg-input-readonly); cursor: not-allowed;">
-        </div>
-        <button class="btn-remove-item" onclick="removeItem(${item.id})" title="删除此物品">🗑️</button>
-    `;
-    
-    container.appendChild(div);
     updateItemCount();
 }
 
