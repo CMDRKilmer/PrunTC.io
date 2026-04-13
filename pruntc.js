@@ -257,7 +257,7 @@ class CargoOptimizer {
             throw new Error('容量必须是有效的正数');
         }
 
-        const validItems = this.items.filter(i => i.code && i.dailyConsume > 0);
+        let validItems = this.items.filter(i => i.code && i.dailyConsume > 0);
         
         if (validItems.length === 0) {
             return null;
@@ -270,6 +270,48 @@ class CargoOptimizer {
         });
         
         const minDays = Math.max(...inventoryDays);
+
+        // 检查容量是否足以装载所有物品
+        // 如果不足，自动剔除库存天数最多的物品
+        let excludedItems = [];
+        
+        while (validItems.length > 0) {
+            // 计算当前 validItems 的最大库存天数
+            const currentInventoryDays = validItems.map(item => {
+                if (item.dailyConsume <= 0) return 0;
+                return item.inventory / item.dailyConsume;
+            });
+            const currentMinDays = Math.max(...currentInventoryDays);
+            
+            const testLoad = this.calculateLoadForDays(validItems, currentMinDays);
+            
+            if (testLoad.totalWeight <= capacityWeight && testLoad.totalVolume <= capacityVolume) {
+                // 容量足够，可以开始优化计算
+                break;
+            }
+            
+            // 容量不足，按库存天数从高到低排序，剔除天数最多的物品
+            const sortedItems = [...validItems].sort((a, b) => {
+                const daysA = a.dailyConsume > 0 ? a.inventory / a.dailyConsume : 0;
+                const daysB = b.dailyConsume > 0 ? b.inventory / b.dailyConsume : 0;
+                return daysB - daysA; // 从高到低排序
+            });
+            
+            const excluded = sortedItems[0];
+            excludedItems.push(excluded);
+            validItems = validItems.filter(i => i.id !== excluded.id);
+        }
+        
+        // 如果所有物品都被剔除了，返回 null
+        if (validItems.length === 0) {
+            return null;
+        }
+        
+        // 计算可以装载的物品的最大库存天数
+        const maxLoadableDays = Math.max(...validItems.map(item => {
+            if (item.dailyConsume <= 0) return 0;
+            return item.inventory / item.dailyConsume;
+        }));
         
         // 优化搜索范围：基于容量和物品消耗率自动计算
         const totalDailyWeight = validItems.reduce((sum, item) => sum + (item.dailyConsume * item.unitWeight), 0);
@@ -279,8 +321,8 @@ class CargoOptimizer {
         const volumeBasedDays = totalDailyVolume > 0 ? capacityVolume / totalDailyVolume : 100;
         
         const maxSearchDays = Math.max(
-            minDays + 100,
-            minDays * 3,
+            maxLoadableDays + 100,
+            maxLoadableDays * 3,
             weightBasedDays + 50,
             volumeBasedDays + 50,
             1
@@ -289,11 +331,11 @@ class CargoOptimizer {
         const precision = 0.001;
         const earlyTerminationThreshold = 0.999;
 
-        let bestDays = minDays;
+        let bestDays = maxLoadableDays;
         let bestFillRate = 0;
         let bestLoad = null;
 
-        let left = Math.max(0.001, minDays - 10);
+        let left = Math.max(0.001, maxLoadableDays - 10);
         let right = maxSearchDays;
         let iterations = 0;
         const maxIterations = 500; // 减少最大迭代次数
@@ -355,7 +397,13 @@ class CargoOptimizer {
             fillRate: round(bestFillRate, 6),
             totalWeight: round(finalResult.totalWeight, 2),
             totalVolume: round(finalResult.totalVolume, 2),
-            load: finalResult.load
+            load: finalResult.load,
+            excludedItems: excludedItems.map(item => ({
+                code: item.code,
+                inventory: item.inventory,
+                dailyConsume: item.dailyConsume,
+                days: item.dailyConsume > 0 ? item.inventory / item.dailyConsume : 0
+            }))
         };
 
         // 缓存结果
@@ -838,6 +886,12 @@ function displayResults(result, capacityWeight, capacityVolume) {
     document.getElementById('volumeProgress').style.transform = `scaleX(${Math.min(volumeRate, 1)})`;
     document.getElementById('bottleneckProgress').style.transform = `scaleX(${Math.min(Math.max(weightRate, volumeRate), 1)})`;
 
+    // 清除旧的可能存在的被剔除物品警告框
+    const oldExcludedWarning = document.querySelector('.excluded-items-warning');
+    if (oldExcludedWarning) {
+        oldExcludedWarning.remove();
+    }
+
     const resultList = document.getElementById('resultList');
     resultList.innerHTML = '';
 
@@ -853,6 +907,37 @@ function displayResults(result, capacityWeight, capacityVolume) {
         `;
         resultList.appendChild(tr);
     });
+
+    // 显示被剔除的物品信息
+    if (result.excludedItems && result.excludedItems.length > 0) {
+        const excludedDiv = document.createElement('div');
+        excludedDiv.className = 'excluded-items-warning';
+        excludedDiv.style.cssText = 'margin-top: 20px; padding: 15px; background: rgba(255, 165, 0, 0.1); border: 1px solid orange; border-radius: 8px; color: orange;';
+        excludedDiv.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 10px;">⚠️ 以下物品因容量不足被剔除（按库存天数从高到低）：</div>
+            <table style="width: 100%; border-collapse: collapse; color: var(--text-color);">
+                <thead>
+                    <tr style="border-bottom: 1px solid orange;">
+                        <th style="text-align: left; padding: 5px;">物品代码</th>
+                        <th style="text-align: right; padding: 5px;">现有库存</th>
+                        <th style="text-align: right; padding: 5px;">每日消耗</th>
+                        <th style="text-align: right; padding: 5px;">库存天数</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${result.excludedItems.map(item => `
+                        <tr style="border-bottom: 1px solid rgba(255, 165, 0, 0.3);">
+                            <td style="padding: 5px;">${escapeHtml(item.code)}</td>
+                            <td style="text-align: right; padding: 5px;">${item.inventory.toLocaleString()}</td>
+                            <td style="text-align: right; padding: 5px;">${item.dailyConsume.toFixed(2)}</td>
+                            <td style="text-align: right; padding: 5px;">${item.days.toFixed(2)} 天</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        resultList.parentNode.appendChild(excludedDiv);
+    }
 
     document.getElementById('resultCard').classList.add('show');
     document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
