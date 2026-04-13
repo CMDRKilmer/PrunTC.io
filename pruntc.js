@@ -1352,8 +1352,6 @@ async function loadSelectedBases() {
                         });
                     }
                 } else {
-                    console.log(`获取 burnrate 数据失败:`, burnrateResponse.status, burnrateResponse.statusText);
-                    
                     // 如果 burnrate 失败，尝试获取站点数据
                     console.log('尝试获取站点数据...');
                     for (const base of selectedBases) {
@@ -1387,14 +1385,19 @@ async function loadSelectedBases() {
                                         }
                                     });
                                 }
+                            } else {
+                                // 只使用showNotification向用户展示错误，避免重复输出
+                                showNotification(`获取站点数据失败: ${sitesResponse.status} ${sitesResponse.statusText}`, 'error');
                             }
                         } catch (error) {
-                            console.log(`获取站点数据出错:`, error);
+                            // 只使用showNotification向用户展示错误，避免重复输出
+                            showNotification(`获取站点数据失败: ${error.message}`, 'error');
                         }
                     }
                 }
             } catch (error) {
-                console.log(`获取 burnrate 数据出错:`, error);
+                // 只使用showNotification向用户展示错误，避免重复输出
+                showNotification(`获取消耗率数据失败: ${error.message}`, 'error');
             }
         }
         
@@ -1560,6 +1563,12 @@ function exportJSONPlan() {
     try {
         const capacityWeight = parseFloat(document.getElementById('capacityWeight').value) || 2000;
         const capacityVolume = parseFloat(document.getElementById('capacityVolume').value) || 2000;
+
+        // 验证容量是否为有效正数
+        if (capacityWeight <= 0 || capacityVolume <= 0 || !isFinite(capacityWeight) || !isFinite(capacityVolume)) {
+            showNotification('容量必须为有效的正数', 'warning');
+            return;
+        }
 
         if (optimizer.items.length === 0) {
             showNotification('请添加物品！', 'warning');
