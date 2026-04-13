@@ -75,6 +75,126 @@ class CargoOptimizerCore {
         this.cacheAccessOrder = [];
         this.loadCache = new Map();
         this.maxLoadCacheSize = this.config.CACHE?.LOAD_CACHE_MAX_SIZE || 200;
+
+        // UI 所需的数据
+        /** @type {Item[]} */
+        this.items = [];
+        this.nextId = 1;
+    }
+
+    /**
+     * 验证物品输入
+     * @param {Object} item - 物品数据
+     * @throws {Error} 验证失败时抛出错误
+     */
+    validateItemInput(item) {
+        if (item.code && typeof item.code !== 'string') {
+            throw new Error('物品代码必须是字符串');
+        }
+        if (!isFinite(item.inventory) || item.inventory < 0) {
+            throw new Error('库存必须是有效的非负数');
+        }
+        if (!isFinite(item.dailyConsume) || item.dailyConsume < 0) {
+            throw new Error('每日消耗量必须是有效的非负数');
+        }
+        if (!isFinite(item.unitWeight) || item.unitWeight < 0) {
+            throw new Error('单位重量必须是有效的非负数');
+        }
+        if (!isFinite(item.unitVolume) || item.unitVolume < 0) {
+            throw new Error('单位体积必须是有效的非负数');
+        }
+    }
+
+    /**
+     * 添加物品
+     * @param {string} code - 物品代码
+     * @param {number} inventory - 现有库存
+     * @param {number} dailyConsume - 每日消耗量
+     * @param {number} unitWeight - 单位重量
+     * @param {number} unitVolume - 单位体积
+     * @returns {Object} 新物品对象
+     */
+    addItem(code = '', inventory = 0, dailyConsume = 0, unitWeight = 0, unitVolume = 0) {
+        this.validateItemInput({ code, inventory, dailyConsume, unitWeight, unitVolume });
+
+        const id = this.nextId++;
+        const newItem = {
+            id,
+            code: code.toUpperCase(),
+            inventory: this.round(Math.max(0, inventory)),
+            dailyConsume: this.round(Math.max(0, dailyConsume), 3),
+            unitWeight: this.round(Math.max(0, unitWeight), 4),
+            unitVolume: this.round(Math.max(0, unitVolume), 4)
+        };
+        this.items.push(newItem);
+
+        this.clearCache();
+        return newItem;
+    }
+
+    /**
+     * 更新物品信息
+     * @param {number} id - 物品ID
+     * @param {string} field - 字段名
+     * @param {*} value - 新值
+     */
+    updateItem(id, field, value) {
+        const item = this.items.find(i => i.id === id);
+        if (item) {
+            if (field === 'code') {
+                if (typeof value !== 'string') {
+                    throw new Error('物品代码必须是字符串');
+                }
+                item[field] = value.toUpperCase();
+            } else if (field === 'inventory') {
+                const numValue = parseFloat(value);
+                if (!isFinite(numValue) || numValue < 0) {
+                    throw new Error('库存必须是有效的非负数');
+                }
+                item[field] = this.round(Math.max(0, numValue), 2);
+            } else if (field === 'dailyConsume') {
+                const numValue = parseFloat(value);
+                if (!isFinite(numValue) || numValue < 0) {
+                    throw new Error('每日消耗量必须是有效的非负数');
+                }
+                item[field] = this.round(Math.max(0, numValue), 3);
+            } else if (field === 'unitWeight') {
+                const numValue = parseFloat(value);
+                if (!isFinite(numValue) || numValue < 0) {
+                    throw new Error('单位重量必须是有效的非负数');
+                }
+                item[field] = this.round(Math.max(0, numValue), 4);
+            } else if (field === 'unitVolume') {
+                const numValue = parseFloat(value);
+                if (!isFinite(numValue) || numValue < 0) {
+                    throw new Error('单位体积必须是有效的非负数');
+                }
+                item[field] = this.round(Math.max(0, numValue), 4);
+            } else {
+                const numValue = parseFloat(value);
+                if (isFinite(numValue)) {
+                    item[field] = this.round(Math.max(0, numValue), 2);
+                }
+            }
+            this.clearCache();
+        }
+    }
+
+    /**
+     * 删除物品
+     * @param {number} id - 物品ID
+     */
+    removeItem(id) {
+        this.items = this.items.filter(i => i.id !== id);
+        this.clearCache();
+    }
+
+    /**
+     * 清空所有物品
+     */
+    clearAllItems() {
+        this.items = [];
+        this.clearCache();
     }
 
     /**
@@ -153,16 +273,26 @@ class CargoOptimizerCore {
     }
 
     /**
-     * 使用二分查找优化算法寻找最优装载方案
-     * @param {Item[]} items - 物品列表
-     * @param {number} capacityWeight - 重量容量
-     * @param {number} capacityVolume - 体积容量
-     * @returns {OptimizeResult|null} 优化结果
+     * 使用存储的物品列表进行优化
+     * @param {number} weight - 重量容量
+     * @param {number} volume - 体积容量
+     * @returns {Object} 优化结果
      */
-    optimize(items, capacityWeight, capacityVolume) {
+    optimize(weight, volume) {
+        return this.optimizeWithItems(this.items, weight, volume);
+    }
+
+    /**
+     * 使用指定的物品列表进行优化
+     * @param {Item[]} items - 物品列表
+     * @param {number} weight - 重量容量
+     * @param {number} volume - 体积容量
+     * @returns {Object} 优化结果
+     */
+    optimizeWithItems(items, weight, volume) {
         // 验证容量
-        if (!isFinite(capacityWeight) || capacityWeight <= 0 ||
-            !isFinite(capacityVolume) || capacityVolume <= 0) {
+        if (!isFinite(weight) || weight <= 0 ||
+            !isFinite(volume) || volume <= 0) {
             throw new Error('容量必须是有效的正数');
         }
 
@@ -192,8 +322,8 @@ class CargoOptimizerCore {
         const totalDailyWeight = validItems.reduce((sum, item) => sum + (item.dailyConsume * item.unitWeight), 0);
         const totalDailyVolume = validItems.reduce((sum, item) => sum + (item.dailyConsume * item.unitVolume), 0);
 
-        const weightBasedDays = totalDailyWeight > 0 ? capacityWeight / totalDailyWeight : 100;
-        const volumeBasedDays = totalDailyVolume > 0 ? capacityVolume / totalDailyVolume : 100;
+        const weightBasedDays = totalDailyWeight > 0 ? weight / totalDailyWeight : 100;
+        const volumeBasedDays = totalDailyVolume > 0 ? volume / totalDailyVolume : 100;
 
         const config = this.config.OPTIMIZE || {};
         const searchBoost = config.SEARCH_BOOST || 50;
@@ -224,9 +354,9 @@ class CargoOptimizerCore {
             const mid = this.round((left + right) / 2, 6);
             const result = this.calculateLoadForDays(validItems, mid);
 
-            if (result.totalWeight <= capacityWeight && result.totalVolume <= capacityVolume) {
-                const weightRate = result.totalWeight / capacityWeight;
-                const volumeRate = result.totalVolume / capacityVolume;
+            if (result.totalWeight <= weight && result.totalVolume <= volume) {
+                const weightRate = result.totalWeight / weight;
+                const volumeRate = result.totalVolume / volume;
                 const fillRate = Math.max(weightRate, volumeRate);
 
                 if (fillRate > bestFillRate) {
@@ -245,19 +375,18 @@ class CargoOptimizerCore {
             }
         }
 
-        // 回退方案
+        // 回退方案：当未找到有效解时
         const fallbackIncrement = config.FALLBACK_DAYS_INCREMENT || 1;
         if (!bestLoad || bestLoad.length === 0) {
             const fallbackDays = Math.max(minSearchDays, currentMaxDays + fallbackIncrement);
             const result = this.calculateLoadForDays(validItems, fallbackDays);
             bestLoad = result.load;
             bestDays = fallbackDays;
-            bestFillRate = Math.max(result.totalWeight / capacityWeight, result.totalVolume / capacityVolume);
+            bestFillRate = Math.max(result.totalWeight / weight, result.totalVolume / volume);
         }
 
-        // 计算最终结果
-        const finalDays = bestDays + fallbackIncrement;
-        const finalResult = this.calculateLoadForDays(validItems, finalDays);
+        // 使用最优天数计算最终结果
+        const finalResult = this.calculateLoadForDays(validItems, bestDays);
 
         return {
             optimalDays: this.round(bestDays, 3),

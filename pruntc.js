@@ -1194,41 +1194,41 @@ async function loadSelectedBases() {
             
             if (productionResponse.ok) {
                 const productionData = await productionResponse.json();
-                
+
                 // 处理生产数据，提取消耗品和生产原料
                 if (productionData) {
                     // 显示生产线输入品消耗量汇总
                     let productionConsumeTotal = {};
-                    
+
                     // 检查数据结构
                     if (Array.isArray(productionData)) {
                         productionData.forEach(line => {
                             // 参考 BURN 模块的计算逻辑
                             const capacity = line.Capacity || line.capacity || 1;
                             const efficiency = line.Efficiency || line.efficiency || 1;
-                            
+
                             // 处理 Orders 数组（循环订单）
                             if (line.Orders && Array.isArray(line.Orders)) {
                                 const burnOrders = line.Orders;
-                                
+
                                 // 计算生产线的基础消耗率
                                 let productionConsumeRate = {};
                                 let totalDurationMs = 0;
                                 let activeOrderCount = 0;
-                                
+
                                 // 遍历所有订单，统计每种材料的总输入量和总生产时间
                                 burnOrders.forEach(order => {
                                     // 跳过 StartedEpochMs 为 null 的等待订单
                                     if (order.StartedEpochMs === null || order.StartedEpochMs === undefined) {
                                         return;
                                     }
-                                    
+
                                     activeOrderCount++;
-                                    
+
                                     // 获取生产周期时间（毫秒）
                                     const durationMs = order.DurationMs || 0;
                                     totalDurationMs += durationMs;
-                                    
+
                                     // 只处理订单输入（生产原料），不处理输出
                                     if (order.Inputs && Array.isArray(order.Inputs)) {
                                         order.Inputs.forEach(input => {
@@ -1248,11 +1248,11 @@ async function loadSelectedBases() {
                                         });
                                     }
                                 });
-                                
+
                                 // 计算每日循环次数：86400000ms / 总DurationMs
                                 const avgDurationMs = activeOrderCount > 0 ? totalDurationMs / activeOrderCount : 86400000;
                                 const cyclesPerDay = avgDurationMs > 0 ? 86400000 / avgDurationMs : 1;
-                                
+
                                 // 计算每种材料的日消耗率 = 总输入量 × 每日循环次数
                                 for (const [ticker, totalInput] of Object.entries(productionConsumeRate)) {
                                     const rate = totalInput * cyclesPerDay;
@@ -1262,6 +1262,13 @@ async function loadSelectedBases() {
                             }
                         });
                     }
+
+                    // 显示生产线原材料消耗汇总
+                    console.log(`===== 生产线原材料消耗汇总 (${base.planetName}) =====`);
+                    for (const [ticker, rate] of Object.entries(productionConsumeTotal)) {
+                        console.log(`  ${ticker}: ${rate}/天`);
+                    }
+                    console.log(`==========================================`);
                 }
             } else {
                 console.log(`获取生产数据失败 (${base.planetName}):`, productionResponse.status, productionResponse.statusText);
@@ -1801,6 +1808,12 @@ function copyJSONCode() {
             });
     }
 }
+
+// 暴露 FIO API 函数到全局作用域
+window.fioLogin = fioLogin;
+window.fioLogout = fioLogout;
+window.fioGetBases = fioGetBases;
+window.loadSelectedBases = loadSelectedBases;
 
 // 在页面加载时初始化JSON导出功能
 window.addEventListener('load', initJSONExport);
