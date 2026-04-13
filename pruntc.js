@@ -1093,9 +1093,10 @@ async function loadSelectedBases() {
     
     document.getElementById('apiStatus').innerHTML = '<span style="color: blue;">正在加载基地数据...</span>';
     
+    let allConsumables = new Map();
+    let allStorage = new Map();
+    
     try {
-        const allConsumables = new Map();
-        const allStorage = new Map();
         
         // 遍历选中的基地
         for (const base of selectedBases) {
@@ -1330,42 +1331,70 @@ async function loadSelectedBases() {
         // 如果没有消耗品，尝试获取 burnrate 数据
         if (allConsumables.size === 0) {
             // 获取用户的 burnrate 数据
-            const burnrateResponse = await fetch(`https://rest.fnar.net/usersettings/burnrate/${fioUsername}`, {
-                headers: {
-                    'Authorization': fioAuthToken
-                }
-            });
-            
-            if (burnrateResponse.ok) {
-                const burnrateData = await burnrateResponse.json();
-                console.log(`Burnrate 数据:`, burnrateData);
+            try {
+                const burnrateResponse = await fetch(`https://rest.fnar.net/usersettings/burnrate/${fioUsername}`, {
+                    headers: {
+                        'Authorization': fioAuthToken
+                    }
+                });
                 
-                // 处理 burnrate 数据
-                if (burnrateData && Array.isArray(burnrateData)) {
-                    burnrateData.forEach(item => {
-                        if (item.MaterialTicker && item.BurnRate) {
-                            allConsumables.set(item.MaterialTicker, item.BurnRate);
-                            console.log(`添加燃烧率: ${item.MaterialTicker}, 速率: ${item.BurnRate}`);
-                        }
-                    });
-                }
-            } else {
-                console.log(`获取 burnrate 数据失败:`, burnrateResponse.status, burnrateResponse.statusText);
-                
-                // 如果 burnrate 失败，尝试获取站点数据
-                console.log('尝试获取站点数据...');
-                for (const base of selectedBases) {
-                    const sitesResponse = await fetch(`https://rest.fnar.net/sites/${fioUsername}/${base.planetId}`, {
-                        headers: {
-                            'Authorization': fioAuthToken
-                        }
-                    });
+                if (burnrateResponse.ok) {
+                    const burnrateData = await burnrateResponse.json();
+                    console.log(`Burnrate 数据:`, burnrateData);
                     
-                    if (sitesResponse.ok) {
-                        const sitesData = await sitesResponse.json();
-                        console.log(`基地 ${base.planetName} (${base.planetId}) 的站点数据:`, sitesData);
+                    // 处理 burnrate 数据
+                    if (burnrateData && Array.isArray(burnrateData)) {
+                        burnrateData.forEach(item => {
+                            if (item.MaterialTicker && item.BurnRate) {
+                                allConsumables.set(item.MaterialTicker, item.BurnRate);
+                                console.log(`添加燃烧率: ${item.MaterialTicker}, 速率: ${item.BurnRate}`);
+                            }
+                        });
+                    }
+                } else {
+                    console.log(`获取 burnrate 数据失败:`, burnrateResponse.status, burnrateResponse.statusText);
+                    
+                    // 如果 burnrate 失败，尝试获取站点数据
+                    console.log('尝试获取站点数据...');
+                    for (const base of selectedBases) {
+                        try {
+                            const sitesResponse = await fetch(`https://rest.fnar.net/sites/${fioUsername}/${base.planetId}`, {
+                                headers: {
+                                    'Authorization': fioAuthToken
+                                }
+                            });
+                            
+                            if (sitesResponse.ok) {
+                                const sitesData = await sitesResponse.json();
+                                console.log(`基地 ${base.planetName} (${base.planetId}) 的站点数据:`, sitesData);
+                                
+                                // 处理站点数据，提取消耗品信息
+                                if (sitesData && Array.isArray(sitesData)) {
+                                    sitesData.forEach(site => {
+                                        // 检查站点是否有消耗品信息
+                                        if (site.WorkforceNeeds && Array.isArray(site.WorkforceNeeds)) {
+                                            site.WorkforceNeeds.forEach(need => {
+                                                if (need.MaterialTicker && need.UnitsPerInterval) {
+                                                    const currentRate = allConsumables.get(need.MaterialTicker) || 0;
+                                                    allConsumables.set(need.MaterialTicker, currentRate + need.UnitsPerInterval);
+                                                    console.log(`从站点添加消耗品: ${need.MaterialTicker}, 速率: ${need.UnitsPerInterval}`);
+                                                } else if (need.materialTicker && need.unitsPerInterval) {
+                                                    const currentRate = allConsumables.get(need.materialTicker) || 0;
+                                                    allConsumables.set(need.materialTicker, currentRate + need.unitsPerInterval);
+                                                    console.log(`从站点添加消耗品: ${need.materialTicker}, 速率: ${need.unitsPerInterval}`);
+                                                }
+                                            });
+                                        }
+                                    });
+                                }
+                            }
+                        } catch (error) {
+                            console.log(`获取站点数据出错:`, error);
+                        }
                     }
                 }
+            } catch (error) {
+                console.log(`获取 burnrate 数据出错:`, error);
             }
         }
         
@@ -1480,3 +1509,204 @@ function fioLogout() {
     document.getElementById('baseSelectionSection').style.display = 'none';
     document.getElementById('baseList').innerHTML = '';
 }
+
+/**
+ * 生成JSON计划
+ * @param {OptimizeResult} result - 优化结果
+ * @param {string} planName - 计划名称
+ * @param {string} groupName - 分组名称
+ * @param {string} exchange - 交易所标识
+ * @returns {string} 生成的JSON字符串
+ */
+function generateJSONPlan(result, planName = 'Auroras Explorer Shipment Plan', groupName = 'A1', exchange = 'NC1') {
+    if (!result || !result.load || result.load.length === 0) {
+        throw new Error('没有有效的优化结果');
+    }
+    
+    // 构建材料对象
+    const materials = {};
+    result.load.forEach(item => {
+        materials[item.code] = item.loadAmount;
+    });
+    
+    // 构建完整的JSON结构
+    const plan = {
+        actions: [{
+            group: groupName,
+            exchange: exchange,
+            priceLimits: {},
+            buyPartial: false,
+            useCXInv: true,
+            name: 'BuyItems',
+            type: 'CX Buy'
+        }],
+        global: {
+            name: planName
+        },
+        groups: [{
+            type: 'Manual',
+            name: groupName,
+            materials: materials
+        }]
+    };
+    
+    return JSON.stringify(plan, null, 2);
+}
+
+/**
+ * 导出JSON计划
+ */
+function exportJSONPlan() {
+    try {
+        const capacityWeight = parseFloat(document.getElementById('capacityWeight').value) || 2000;
+        const capacityVolume = parseFloat(document.getElementById('capacityVolume').value) || 2000;
+
+        if (optimizer.items.length === 0) {
+            showNotification('请添加物品！', 'warning');
+            return;
+        }
+
+        const result = optimizer.optimize(capacityWeight, capacityVolume);
+
+        if (!result) {
+            showNotification('无法找到满足约束的装载方案！请检查输入数据或增加船舱容量。', 'warning');
+            return;
+        }
+
+        // 获取计划名称（如果有输入）
+        const planNameInput = document.getElementById('planName');
+        const planName = planNameInput ? planNameInput.value : 'Auroras Explorer Shipment Plan';
+        
+        // 生成JSON
+        const jsonPlan = generateJSONPlan(result, planName);
+        
+        // 创建下载链接
+        const blob = new Blob([jsonPlan], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${planName.replace(/\s+/g, '_')}_plan.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showNotification('JSON计划已导出', 'success');
+    } catch (error) {
+        console.error('导出JSON计划错误:', error);
+        showNotification('导出过程中发生错误: ' + error.message, 'error');
+    }
+}
+
+/**
+ * 初始化JSON导出功能
+ */
+function initJSONExport() {
+    // 检查是否已存在导出按钮
+    if (!document.getElementById('exportJSONBtn')) {
+        // 在结果卡片中添加导出按钮和JSON显示区域
+        const resultCard = document.getElementById('resultCard');
+        if (resultCard) {
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'export-button-container';
+            buttonContainer.style.marginTop = '20px';
+            buttonContainer.style.textAlign = 'center';
+            buttonContainer.style.padding = '15px';
+            buttonContainer.style.background = 'var(--bg-card)';
+            buttonContainer.style.borderRadius = '8px';
+            buttonContainer.style.border = '1px solid var(--border-color)';
+            
+            buttonContainer.innerHTML = `
+                <div style="margin-bottom: 10px;">
+                    <label for="planName" style="margin-right: 10px;">计划名称:</label>
+                    <input type="text" id="planName" value="Auroras Explorer Shipment Plan" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <button id="exportJSONBtn" class="btn btn-primary" onclick="exportJSONPlan()" style="padding: 8px 16px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">
+                        导出JSON文件
+                    </button>
+                    <button id="showJSONBtn" class="btn btn-secondary" onclick="showJSONCode()" style="padding: 8px 16px; background-color: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        显示JSON代码
+                    </button>
+                </div>
+                <div id="jsonCodeContainer" style="display: none; margin-top: 15px; text-align: left;">
+                    <h4 style="margin-bottom: 10px;">生成的JSON代码：</h4>
+                    <pre id="jsonCode" style="background: #f8f9fa; padding: 15px; border-radius: 4px; border: 1px solid #dee2e6; max-height: 300px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px;"></pre>
+                    <button id="copyJSONBtn" class="btn btn-sm btn-success" onclick="copyJSONCode()" style="margin-top: 10px; padding: 5px 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        复制JSON代码
+                    </button>
+                </div>
+            `;
+            
+            // 直接将按钮容器添加到结果卡片的末尾
+            resultCard.appendChild(buttonContainer);
+        }
+    }
+}
+
+/**
+ * 显示JSON代码
+ */
+function showJSONCode() {
+    try {
+        const capacityWeight = parseFloat(document.getElementById('capacityWeight').value) || 2000;
+        const capacityVolume = parseFloat(document.getElementById('capacityVolume').value) || 2000;
+
+        if (optimizer.items.length === 0) {
+            showNotification('请添加物品！', 'warning');
+            return;
+        }
+
+        const result = optimizer.optimize(capacityWeight, capacityVolume);
+
+        if (!result) {
+            showNotification('无法找到满足约束的装载方案！请检查输入数据或增加船舱容量。', 'warning');
+            return;
+        }
+
+        // 获取计划名称（如果有输入）
+        const planNameInput = document.getElementById('planName');
+        const planName = planNameInput ? planNameInput.value : 'Auroras Explorer Shipment Plan';
+        
+        // 生成JSON
+        const jsonPlan = generateJSONPlan(result, planName);
+        
+        // 显示JSON代码
+        const jsonCodeElement = document.getElementById('jsonCode');
+        const jsonCodeContainer = document.getElementById('jsonCodeContainer');
+        
+        if (jsonCodeElement && jsonCodeContainer) {
+            jsonCodeElement.textContent = jsonPlan;
+            jsonCodeContainer.style.display = 'block';
+            
+            // 滚动到JSON代码区域
+            jsonCodeContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        
+        showNotification('JSON代码已生成', 'success');
+    } catch (error) {
+        console.error('显示JSON代码错误:', error);
+        showNotification('生成过程中发生错误: ' + error.message, 'error');
+    }
+}
+
+/**
+ * 复制JSON代码到剪贴板
+ */
+function copyJSONCode() {
+    const jsonCodeElement = document.getElementById('jsonCode');
+    if (jsonCodeElement) {
+        const jsonText = jsonCodeElement.textContent;
+        navigator.clipboard.writeText(jsonText)
+            .then(() => {
+                showNotification('JSON代码已复制到剪贴板', 'success');
+            })
+            .catch(err => {
+                console.error('复制失败:', err);
+                showNotification('复制失败，请手动复制', 'error');
+            });
+    }
+}
+
+// 在页面加载时初始化JSON导出功能
+window.addEventListener('load', initJSONExport);
