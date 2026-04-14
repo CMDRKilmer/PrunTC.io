@@ -70,13 +70,9 @@ class CargoOptimizerCore {
         });
         this.config = config.config || {};
 
-        this.cache = new Map();
-        this.maxCacheSize = this.config.CACHE?.MAX_SIZE || 50;
-        this.cacheAccessOrder = [];
         this.loadCache = new Map();
         this.maxLoadCacheSize = this.config.CACHE?.LOAD_CACHE_MAX_SIZE || 200;
 
-        // UI 所需的数据
         /** @type {Item[]} */
         this.items = [];
         this.nextId = 1;
@@ -401,9 +397,7 @@ class CargoOptimizerCore {
      * 清空所有缓存
      */
     clearCache() {
-        this.cache.clear();
         this.loadCache.clear();
-        this.cacheAccessOrder = [];
     }
 }
 

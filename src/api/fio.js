@@ -372,6 +372,28 @@ export function clearAuthStorage() {
 }
 
 /**
+ * FIO API 登出
+ */
+export function fioLogout() {
+    clearAuthStorage();
+    const usernameInput = document.getElementById('fioUsername');
+    const passwordInput = document.getElementById('fioPassword');
+    const apiKeyInput = document.getElementById('fioApiKey');
+    const authTypeSelect = document.getElementById('fioAuthType');
+    const statusDiv = document.getElementById('apiStatus');
+    const baseSelectionSection = document.getElementById('baseSelectionSection');
+    const baseList = document.getElementById('baseList');
+
+    if (usernameInput) usernameInput.value = '';
+    if (passwordInput) passwordInput.value = '';
+    if (apiKeyInput) apiKeyInput.value = '';
+    if (authTypeSelect) authTypeSelect.value = 'password';
+    if (statusDiv) statusDiv.innerHTML = '<span style="color: orange;">已登出</span>';
+    if (baseSelectionSection) baseSelectionSection.style.display = 'none';
+    if (baseList) baseList.innerHTML = '';
+}
+
+/**
  * 检查是否已登录
  * @returns {boolean} 是否已登录
  */
@@ -386,6 +408,60 @@ export function restoreFioAuth() {
     fioAuthToken = localStorage.getItem('fioAuthToken');
     fioUsername = localStorage.getItem('fioUsername');
     fioAuthType = localStorage.getItem('fioAuthType') || 'password';
+}
+
+/**
+ * 切换认证表单显示
+ */
+export function toggleAuthForm() {
+    const authType = document.getElementById('fioAuthType').value;
+    const usernameField = document.getElementById('usernameField');
+    const passwordField = document.getElementById('passwordField');
+    const apiKeyField = document.getElementById('apiKeyField');
+
+    if (authType === 'password') {
+        if (usernameField) usernameField.style.display = 'flex';
+        if (passwordField) passwordField.style.display = 'flex';
+        if (apiKeyField) apiKeyField.style.display = 'none';
+    } else {
+        if (usernameField) usernameField.style.display = 'flex';
+        if (passwordField) passwordField.style.display = 'none';
+        if (apiKeyField) apiKeyField.style.display = 'flex';
+    }
+}
+
+/**
+ * 加载选中基地的消耗品数据（从 DOM 读取选中状态）
+ */
+export async function loadSelectedBases() {
+    if (!fioAuthToken || !fioUsername) {
+        const statusDiv = document.getElementById('apiStatus');
+        if (statusDiv) statusDiv.innerHTML = '<span style="color: red;">请先登录</span>';
+        return;
+    }
+
+    const checkboxes = document.querySelectorAll('#baseList input[type="checkbox"]:checked');
+    const selectedBases = Array.from(checkboxes).map(cb => {
+        const planetId = cb.value;
+        const planetName = cb.getAttribute('data-name') || planetId;
+        return { planetId, planetName };
+    });
+
+    if (selectedBases.length === 0) {
+        const statusDiv = document.getElementById('apiStatus');
+        if (statusDiv) statusDiv.innerHTML = '<span style="color: red;">请选择至少一个基地</span>';
+        return;
+    }
+
+    const statusDiv = document.getElementById('apiStatus');
+    if (statusDiv) statusDiv.innerHTML = '<span style="color: blue;">正在加载基地数据...</span>';
+
+    try {
+        const { consumables, storage } = await fioLoadBaseData(selectedBases);
+        if (statusDiv) statusDiv.innerHTML = `<span style="color: green;">成功加载 ${consumables.size} 种消耗品</span>`;
+    } catch (error) {
+        if (statusDiv) statusDiv.innerHTML = `<span style="color: red;">加载基地数据失败: ${error.message}</span>`;
+    }
 }
 
 // 导出公共方法

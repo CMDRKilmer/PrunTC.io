@@ -1,74 +1,4 @@
 /**
- * 通用工具模块
- * 提供各模块共用的工具函数
- */
-
-/**
- * 内存管理器 - 管理定时器和事件监听器清理
- */
-class MemoryManager {
-    constructor() {
-        this.timeouts = new Set();
-        this.intervals = new Set();
-        this.listeners = [];
-    }
-
-    /**
-     * 创建带追踪的 setTimeout
-     * @returns {number} timeout ID
-     */
-    setTimeout(...args) {
-        const id = setTimeout(...args);
-        this.timeouts.add(id);
-        return id;
-    }
-
-    /**
-     * 创建带追踪的 setInterval
-     * @returns {number} interval ID
-     */
-    setInterval(...args) {
-        const id = setInterval(...args);
-        this.intervals.add(id);
-        return id;
-    }
-
-    /**
-     * 清除所有追踪的定时器
-     */
-    clearAll() {
-        this.timeouts.forEach(id => clearTimeout(id));
-        this.intervals.forEach(id => clearInterval(id));
-        this.timeouts.clear();
-        this.intervals.clear();
-    }
-
-    /**
-     * 追踪事件监听器（便于批量移除）
-     * @param {HTMLElement} element - DOM 元素
-     * @param {string} type - 事件类型
-     * @param {Function} handler - 事件处理函数
-     * @param {Object} options - 事件选项
-     */
-    addListener(element, type, handler, options) {
-        element.addEventListener(type, handler, options);
-        this.listeners.push({ element, type, handler, options });
-    }
-
-    /**
-     * 移除所有追踪的事件监听器
-     */
-    removeAllListeners() {
-        this.listeners.forEach(({ element, type, handler, options }) => {
-            element.removeEventListener(type, handler, options);
-        });
-        this.listeners = [];
-    }
-}
-
-const memoryManager = new MemoryManager();
-
-/**
  * 高精度数值舍入
  * @param {number} num - 要舍入的数字
  * @param {number} decimals - 小数位数
@@ -242,7 +172,5 @@ export {
     showNotification,
     showConfirm,
     toggleTheme,
-    initTheme,
-    MemoryManager,
-    memoryManager
+    initTheme
 };

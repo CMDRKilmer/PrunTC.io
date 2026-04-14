@@ -123,77 +123,6 @@ function validateCapacity(capacityWeight, capacityVolume) {
     }
 }
 
-/**
- * 创建 LRU 缓存
- * @param {number} maxSize - 最大缓存数量
- * @returns {Object} 缓存对象
- */
-function createLRUCache(maxSize) {
-    const cache = new Map();
-    const accessOrder = [];
-
-    return {
-        get(key) {
-            if (cache.has(key)) {
-                const index = accessOrder.indexOf(key);
-                if (index > -1) {
-                    accessOrder.splice(index, 1);
-                    accessOrder.push(key);
-                }
-                return cache.get(key);
-            }
-            return null;
-        },
-        set(key, value) {
-            if (cache.has(key)) {
-                const index = accessOrder.indexOf(key);
-                if (index > -1) {
-                    accessOrder.splice(index, 1);
-                }
-            } else if (cache.size >= maxSize) {
-                const lruKey = accessOrder.shift();
-                if (lruKey) {
-                    cache.delete(lruKey);
-                }
-            }
-            cache.set(key, value);
-            accessOrder.push(key);
-        },
-        has(key) {
-            return cache.has(key);
-        },
-        delete(key) {
-            const index = accessOrder.indexOf(key);
-            if (index > -1) {
-                accessOrder.splice(index, 1);
-            }
-            return cache.delete(key);
-        },
-        clear() {
-            cache.clear();
-            accessOrder.length = 0;
-        },
-        get size() {
-            return cache.size;
-        }
-    };
-}
-
-// 导出工具函数（用于模块化）
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        round,
-        simpleHash,
-        escapeHtml,
-        debounce,
-        isValidNumber,
-        generateLoadCacheKey,
-        validateItem,
-        validateCapacity,
-        createLRUCache
-    };
-}
-
 // ES6 模块导出
 export {
     round,
@@ -203,6 +132,5 @@ export {
     isValidNumber,
     generateLoadCacheKey,
     validateItem,
-    validateCapacity,
-    createLRUCache
+    validateCapacity
 };
