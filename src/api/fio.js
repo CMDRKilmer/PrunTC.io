@@ -18,6 +18,16 @@ let fioAuthType = 'password';
  * @param {Function} onError - 错误回调
  */
 export async function fioLogin(authType, username, password, apiKey, onSuccess, onError) {
+    if (arguments.length === 0) {
+        authType = document.getElementById('fioAuthType')?.value || 'password';
+        username = document.getElementById('fioUsername')?.value || '';
+        password = document.getElementById('fioPassword')?.value || '';
+        apiKey = document.getElementById('fioApiKey')?.value || '';
+    }
+    
+    const statusDiv = document.getElementById('apiStatus');
+    if (statusDiv) statusDiv.innerHTML = '<span style="color: blue;">正在登录...</span>';
+    
     try {
         if (authType === 'password') {
             if (!username || !password) {
@@ -30,7 +40,6 @@ export async function fioLogin(authType, username, password, apiKey, onSuccess, 
         }
 
         if (authType === 'password') {
-            // 使用用户名密码登录
             const response = await fetch('https://rest.fnar.net/auth/login', {
                 method: 'POST',
                 headers: {
@@ -52,18 +61,15 @@ export async function fioLogin(authType, username, password, apiKey, onSuccess, 
             fioUsername = username;
             fioAuthType = authType;
         } else {
-            // 使用 API 密钥登录（直接设置为认证令牌）
             fioAuthToken = apiKey;
             fioUsername = username;
             fioAuthType = authType;
         }
         
-        // 保存认证信息到 localStorage
         localStorage.setItem('fioAuthToken', fioAuthToken);
         localStorage.setItem('fioUsername', fioUsername);
         localStorage.setItem('fioAuthType', fioAuthType);
         
-        // 测试认证是否成功
         const testResponse = await fetch(`https://rest.fnar.net/sites/planets/${fioUsername}`, {
             headers: {
                 'Authorization': fioAuthToken
@@ -74,14 +80,17 @@ export async function fioLogin(authType, username, password, apiKey, onSuccess, 
             throw new Error(`认证失败: ${testResponse.status} ${testResponse.statusText}`);
         }
         
+        if (statusDiv) statusDiv.innerHTML = '<span style="color: green;">登录成功!</span>';
         if (onSuccess) onSuccess();
         
-        // 获取基地列表
-        return await fioGetBases();
+        const bases = await fioGetBases();
+        displayBaseList(bases);
+        return bases;
     } catch (error) {
+        if (statusDiv) statusDiv.innerHTML = `<span style="color: red;">${error.message}</span>`;
         if (onError) onError(error.message);
         clearAuthStorage();
-        throw error;
+        console.error('FIO登录错误:', error);
     }
 }
 
@@ -140,6 +149,32 @@ export async function fioGetBases() {
     } catch (error) {
         throw new Error(`获取基地列表失败: ${error.message}`);
     }
+}
+
+/**
+ * 显示基地列表到 DOM
+ * @param {Array} bases - 基地列表
+ */
+function displayBaseList(bases) {
+    const baseList = document.getElementById('baseList');
+    const baseSelectionSection = document.getElementById('baseSelectionSection');
+    
+    if (!baseList || !baseSelectionSection) return;
+    
+    if (!bases || bases.length === 0) {
+        baseList.innerHTML = '<p style="color: var(--text-muted);">没有找到基地</p>';
+        baseSelectionSection.style.display = 'block';
+        return;
+    }
+    
+    baseList.innerHTML = bases.map(base => `
+        <label class="base-item">
+            <input type="checkbox" value="${base.planetId}" data-name="${base.planetName}">
+            <span>${base.planetName}</span>
+        </label>
+    `).join('');
+    
+    baseSelectionSection.style.display = 'block';
 }
 
 /**
@@ -459,6 +494,10 @@ export async function loadSelectedBases() {
     try {
         const { consumables, storage } = await fioLoadBaseData(selectedBases);
         if (statusDiv) statusDiv.innerHTML = `<span style="color: green;">成功加载 ${consumables.size} 种消耗品</span>`;
+
+        if (window.loadFioDataToTable) {
+            window.loadFioDataToTable(consumables, storage);
+        }
     } catch (error) {
         if (statusDiv) statusDiv.innerHTML = `<span style="color: red;">加载基地数据失败: ${error.message}</span>`;
     }

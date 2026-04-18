@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PrunTC.io - 船舱装载优化工具，包含补给运输计算器和最少次数运输计算器">
+    <meta name="keywords" content="运输,计算器,船舱,装载,优化,补给,库存平衡">
+    <meta name="author" content="CMDRKilmer">
+    <meta property="og:title" content="🚀 PrunTC.io - 船舱装载优化工具">
+    <meta property="og:description" content="优化船舱装载方案，实现库存消耗平衡">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="zh_CN">
+    <title>🚀 PrunTC.io - 船舱装载优化工具</title>
+    <link rel="stylesheet" href="./styles/main.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换主题" title="切换主题">🌓</button>
+    
+    <div class="container">
+        <header>
+            <h1>🚀 PrunTC.io</h1>
+            <p style="color: var(--text-secondary); margin-top: 8px;">船舱装载优化工具</p>
+        </header>
+        
+        <nav class="nav-tabs" role="tablist" aria-label="功能切换">
+            <a href="#/pruntc" class="nav-tab active" role="tab" aria-selected="true" data-route="pruntc">🚀 补给运输计算器</a>
+            <a href="#/mtc" class="nav-tab" role="tab" aria-selected="false" data-route="mtc">🚚 最少次数运输计算器</a>
+        </nav>
+        
+        <main id="app-main">
+            <section class="card" aria-labelledby="loading-heading">
+                <h2 id="loading-heading">⚙️ 加载中...</h2>
+                <p>正在初始化应用，请稍候...</p>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="./src/index.js"></script>
+</body>
+</html>

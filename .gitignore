@@ -58,3 +58,7 @@ out/
 
 # 其他
 *.orig
+.trae/specs/pruntc-nodejs-refactor/checklist.md
+.trae/specs/pruntc-nodejs-refactor/spec.md
+.trae/specs/pruntc-nodejs-refactor/tasks.md
+doc/technical-docs.md

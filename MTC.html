@@ -4,166 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="最少次数运输计算器 - 计算运输多种物品所需的最少运输次数">
+    <meta name="author" content="CMDRKilmer">
     <title>🚚 最少次数运输计算器</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles/main.css">
+    <script>
+        if (window.location.pathname !== '/index.html' && window.location.pathname !== '/') {
+            window.location.href = '/index.html#/mtc';
+        }
+    </script>
 </head>
 <body>
-    <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换主题" title="切换主题">🌓</button>
-    
-    <div class="container">
-        <header>
-            <h1>🚚 最少次数运输计算器</h1>
-        </header>
-        
-        <!-- 功能切换导航 -->
-        <nav class="nav-tabs" role="tablist" aria-label="功能切换">
-            <a href="PrunTC.html" class="nav-tab" role="tab">🚀 补给运输计算器</a>
-            <a href="MTC.html" class="nav-tab active" role="tab" aria-selected="true">🚚 最少次数运输计算器</a>
-        </nav>
-        
-        <main>
-            <!-- 运输限制条件 -->
-            <section class="card" aria-labelledby="constraints-heading">
-                <h2 id="constraints-heading">📋 运输限制条件</h2>
-                <div class="constraints-wrapper">
-                    <div class="constraints-box">
-                        <h3>⚙️ 当前运输配置</h3>
-                        <div class="constraint-item">
-                            <span class="constraint-icon">🔄</span>
-                            <span>物品组合规则：每次运输可同时装载多种物品，但总重量和总体积不能超过上限</span>
-                        </div>
-                        <div class="constraint-item">
-                            <span class="constraint-icon">🎯</span>
-                            <span>优化目标：在满足约束条件下，最小化总运输次数</span>
-                        </div>
-                    </div>
-                    <div class="ship-info-box">
-                        <h3>🚀 飞船信息</h3>
-                        <div class="ship-info-item">
-                            <span class="ship-info-label">船舱类型：</span>
-                            <select id="shipType" onchange="mtcUpdateShipCapacity()">
-                                <option value="">-- 选择船舱 --</option>
-                                <option value="TCB">TCB 微型货舱</option>
-                                <option value="VSC">VSC 超小型货舱</option>
-                                <option value="SCB" selected>SCB 小型货舱</option>
-                                <option value="MCB">MCB 中型货舱</option>
-                                <option value="LCB">LCB 大型货舱</option>
-                                <option value="HCB">HCB 巨型货舱</option>
-                                <option value="VCB">VCB 高容积货舱</option>
-                                <option value="WCB">WCB 高负荷货舱</option>
-                            </select>
-                        </div>
-                        <div class="ship-info-item">
-                            <span class="ship-info-label">重量容量（吨）：</span>
-                            <input type="number" id="maxWeightInput" value="500" min="1" step="100" 
-                                onchange="mtcUpdateConstraintDisplay()">
-                        </div>
-                        <div class="ship-info-item">
-                            <span class="ship-info-label">体积容量（m³）：</span>
-                            <input type="number" id="maxVolumeInput" value="500" min="1" step="100" 
-                                onchange="mtcUpdateConstraintDisplay()">
-                        </div>
-                    </div>
-                </div>
-            </section>
-            
-            <!-- 物品输入区域 -->
-            <section class="card" aria-labelledby="items-heading">
-                <h2 id="items-heading">📦 物品信息 <span id="itemCount" class="highlight">0 种物品</span></h2>
-                
-                <!-- 错误提示 -->
-                <div id="errorMessage" class="error-message" role="alert"></div>
-                
-                <!-- 物品列表 -->
-                <div id="itemsContainer" class="items-input-section">
-                    <!-- 动态生成的物品输入行 -->
-                </div>
-                
-                <!-- 操作按钮 -->
-                <div class="action-buttons">
-                    <button class="btn btn-add" onclick="mtcAddItem()">➕ 添加物品</button>
-                    <button class="btn btn-secondary" onclick="mtcLoadExample()">📋 示例数据</button>
-                    <button class="btn btn-danger" onclick="mtcResetAll()">🗑️ 清空</button>
-                </div>
-            </section>
-            
-            <!-- 计算按钮 -->
-            <button class="btn btn-primary" onclick="mtcCalculateMinTrips()">🧮 计算最少运输次数</button>
-            
-            <!-- 计算中提示 -->
-            <div id="calculating" class="calculating">
-                <div class="spinner"></div>
-                <p>正在计算最优运输方案...</p>
-            </div>
-            
-            <!-- 结果展示区域 -->
-            <section class="card result-card" id="resultCard">
-                <h2>📊 计算结果</h2>
-                
-                <!-- 统计摘要 -->
-                <div class="summary-stats">
-                    <div class="summary-stat">
-                        <div class="summary-stat-value" id="totalTrips">0</div>
-                        <div class="summary-stat-label">最少运输次数</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-stat-value" id="fillRate">0%</div>
-                        <div class="summary-stat-label">填充率</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-stat-value" id="totalWeight">0</div>
-                        <div class="summary-stat-label">总重量 (t)</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-stat-value" id="totalVolume">0</div>
-                        <div class="summary-stat-label">总体积 (m³)</div>
-                    </div>
-                </div>
-                
-                <!-- 装载进度 -->
-                <div class="progress-section" role="group" aria-label="装载进度" style="margin-top: 25px;">
-                    <div class="progress-item">
-                        <div class="progress-header">
-                            <span>⚖️ 重量填充</span>
-                            <span id="weightText">0 / 0 t</span>
-                        </div>
-                        <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                            <div class="progress-fill weight" id="weightProgress"></div>
-                        </div>
-                    </div>
-                    <div class="progress-item">
-                        <div class="progress-header">
-                            <span>📦 体积填充</span>
-                            <span id="volumeText">0 / 0 m³</span>
-                        </div>
-                        <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                            <div class="progress-fill volume" id="volumeProgress"></div>
-                        </div>
-                    </div>
-                    <div class="progress-item">
-                        <div class="progress-header">
-                            <span>🔴 瓶颈资源</span>
-                            <span id="bottleneckText">-</span>
-                        </div>
-                        <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                            <div class="progress-fill bottleneck" id="bottleneckProgress"></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- 详细运输方案 -->
-                <div id="tripPlans" style="margin-top: 25px;">
-                    <!-- 动态生成的运输方案 -->
-                </div>
-            </section>
-        </main>
-        
-        <footer style="text-align: center; margin-top: 40px; padding: 20px; color: var(--text-muted); border-top: 1px solid var(--border-color);">
-            <p>🚚 最少次数运输计算器 | 优化您的运输效率</p>
-        </footer>
+    <div class="container" style="display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+        <div style="text-align: center;">
+            <h1>🚚 正在跳转到应用...</h1>
+            <p>如果没有自动跳转，请点击 <a href="/index.html#/mtc">这里</a></p>
+        </div>
     </div>
-
-    <!-- 引入脚本 -->
-    <script src="src/mtc.js" type="module"></script>
 </body>
 </html>

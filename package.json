@@ -1,0 +1,17 @@
+{
+  "name": "pruntc.io",
+  "version": "1.0.0",
+  "description": "PrunTC - 船舱装载优化工具",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["optimization", "cargo", "calculator", "game"],
+  "author": "CMDRKilmer",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
