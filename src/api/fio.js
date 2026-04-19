@@ -18,27 +18,18 @@ let fioAuthType = 'password';
  * @param {Function} onError - 错误回调
  */
 export async function fioLogin(authType, username, password, apiKey, onSuccess, onError) {
-    if (arguments.length === 0) {
-        authType = document.getElementById('fioAuthType')?.value || 'password';
-        username = document.getElementById('fioUsername')?.value || '';
-        password = document.getElementById('fioPassword')?.value || '';
-        apiKey = document.getElementById('fioApiKey')?.value || '';
+    // 验证参数
+    if (!authType || !username) {
+        throw new Error('认证类型和用户名不能为空');
     }
     
-    const statusDiv = document.getElementById('apiStatus');
-    if (statusDiv) statusDiv.innerHTML = '<span style="color: blue;">正在登录...</span>';
+    if (authType === 'password' && !password) {
+        throw new Error('请输入密码');
+    } else if (authType === 'apikey' && !apiKey) {
+        throw new Error('请输入 API 密钥');
+    }
     
     try {
-        if (authType === 'password') {
-            if (!username || !password) {
-                throw new Error('请输入用户名和密码');
-            }
-        } else {
-            if (!username || !apiKey) {
-                throw new Error('请输入用户名和 API 密钥');
-            }
-        }
-
         if (authType === 'password') {
             const response = await fetch('https://rest.fnar.net/auth/login', {
                 method: 'POST',
@@ -80,17 +71,41 @@ export async function fioLogin(authType, username, password, apiKey, onSuccess, 
             throw new Error(`认证失败: ${testResponse.status} ${testResponse.statusText}`);
         }
         
-        if (statusDiv) statusDiv.innerHTML = '<span style="color: green;">登录成功!</span>';
         if (onSuccess) onSuccess();
         
         const bases = await fioGetBases();
+        return bases;
+    } catch (error) {
+        if (onError) onError(error.message);
+        clearAuthStorage();
+        console.error('FIO登录错误:', error);
+        throw error;
+    }
+}
+
+/**
+ * 从 DOM 元素获取认证信息并登录
+ * @param {Function} onSuccess - 成功回调
+ * @param {Function} onError - 错误回调
+ */
+export async function fioLoginFromForm(onSuccess, onError) {
+    const authType = document.getElementById('fioAuthType')?.value || 'password';
+    const username = document.getElementById('fioUsername')?.value || '';
+    const password = document.getElementById('fioPassword')?.value || '';
+    const apiKey = document.getElementById('fioApiKey')?.value || '';
+    
+    const statusDiv = document.getElementById('apiStatus');
+    if (statusDiv) statusDiv.innerHTML = '<span style="color: blue;">正在登录...</span>';
+    
+    try {
+        const bases = await fioLogin(authType, username, password, apiKey, onSuccess, onError);
+        if (statusDiv) statusDiv.innerHTML = '<span style="color: green;">登录成功!</span>';
         displayBaseList(bases);
         return bases;
     } catch (error) {
         if (statusDiv) statusDiv.innerHTML = `<span style="color: red;">${error.message}</span>`;
         if (onError) onError(error.message);
-        clearAuthStorage();
-        console.error('FIO登录错误:', error);
+        return null;
     }
 }
 

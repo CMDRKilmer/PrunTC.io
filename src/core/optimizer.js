@@ -234,7 +234,12 @@ class CargoOptimizerCore {
                 continue;
             }
 
-            const loadAmount = Math.ceil(required);
+            const loadAmount = Math.floor(required);
+            
+            if (loadAmount <= 0) {
+                continue;
+            }
+            
             const weight = loadAmount * item.unitWeight;
             const volume = loadAmount * item.unitVolume;
 

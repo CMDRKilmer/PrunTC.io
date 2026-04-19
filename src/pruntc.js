@@ -6,7 +6,7 @@
 import { CargoOptimizerCore } from './core/optimizer.js';
 import { round, debounce, escapeHtml, showNotification, showConfirm, initTheme } from './utils/index.js';
 import { getMaterialByCode, getShipTypeByType } from './data/index.js';
-import { fioLogin, fioLogout, loadSelectedBases, toggleAuthForm, restoreFioAuth, fioGetBases } from './api/fio.js';
+import { fioLogin, fioLoginFromForm, fioLogout, loadSelectedBases, toggleAuthForm, restoreFioAuth, fioGetBases } from './api/fio.js';
 import { CONFIG } from './core/config.js';
 
 let optimizer = null;
@@ -680,7 +680,7 @@ function mount() {
     window.updateShipCapacity = updateShipCapacity;
     window.validateCapacityInput = validateCapacityInput;
     window.toggleAuthForm = toggleAuthForm;
-    window.fioLogin = fioLogin;
+    window.fioLogin = fioLoginFromForm;
     window.fioLogout = fioLogout;
     window.loadSelectedBases = loadSelectedBases;
     window.loadFioDataToTable = loadFioDataToTable;
